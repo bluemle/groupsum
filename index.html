@@ -150,7 +150,14 @@
         <div><div class="rid-lbl">Room ID</div><div class="rid-code" id="rid-display">—</div></div>
         <button class="btn primary sm" id="btn-copy">Copy</button>
       </div>
-      <p class="info" style="margin-top:.875rem">Once everyone has joined, click <strong>Lock &amp; Start</strong>. No one can join after that.</p>
+      <p class="info" style="margin-top:.875rem">Share the link below — guests only need to enter their name. Or share the Room ID manually.</p>
+      <div id="share-link-box" style="display:none;margin-top:.75rem">
+        <div style="font-size:.75rem;font-weight:500;color:var(--faint);text-transform:uppercase;letter-spacing:.07em;margin-bottom:.375rem">Invite link</div>
+        <div style="display:flex;gap:.5rem">
+          <input class="inp" id="share-link-inp" type="text" readonly style="font-size:.8125rem;cursor:pointer" onclick="this.select()"/>
+          <button class="btn primary sm" id="btn-copy-link">Copy link</button>
+        </div>
+      </div>
       <button class="btn primary full" id="btn-lock" style="margin-top:1rem" disabled>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
         <span id="lock-label">Waiting for participants…</span>
@@ -241,6 +248,7 @@ function genId() {
 }
 function showScreen(id) {
   ['s-welcome','s-room'].forEach(s => $(s).classList.toggle('active', s===id));
+  if (id === 's-welcome') history.replaceState(null, '', location.pathname);
 }
 function setConn(txt, cls) {
   const b = $('conn-badge');
@@ -551,6 +559,11 @@ function startHost(name) {
     $('rid-display').textContent=rid;
     $('role-lbl').textContent='Host';
     $('host-card').style.display='';
+    // Set hash and show invite link
+    history.replaceState(null, '', '#' + rid);
+    const inviteUrl = location.href.split('#')[0] + '#' + rid;
+    $('share-link-inp').value = inviteUrl;
+    $('share-link-box').style.display = '';
     renderMembers(); updateLockBtn();
   });
   peer.on('connection', conn => {
@@ -571,6 +584,7 @@ function startHost(name) {
 /* ── start as guest ── */
 function startGuest(name, rid) {
   S.myName=name; S.isHost=false; S.roomId=rid;
+  history.replaceState(null, '', location.pathname); // clear hash after joining
   showScreen('s-room'); setConn('Connecting…');
   const peer = new Peer(undefined, {debug:0}); S.peer=peer;
   peer.on('open', myId => {
@@ -606,6 +620,12 @@ $('join-rid').addEventListener('keydown',  e => { if(e.key==='Enter') $('btn-joi
 $('btn-lock').addEventListener('click',   lockRoom);
 $('btn-submit').addEventListener('click', submitNumber);
 $('num-inp').addEventListener('keydown',  e => { if(e.key==='Enter') submitNumber(); });
+$('btn-copy-link').addEventListener('click', () => {
+  navigator.clipboard.writeText($('share-link-inp').value).then(() => {
+    $('btn-copy-link').textContent='Copied!';
+    setTimeout(() => $('btn-copy-link').textContent='Copy link', 2000);
+  });
+});
 $('btn-copy').addEventListener('click', () => {
   navigator.clipboard.writeText($('rid-display').textContent).then(() => {
     $('btn-copy').textContent='Copied!';
@@ -626,6 +646,20 @@ function applyTheme(){
 }
 applyTheme();
 $('theme-btn').addEventListener('click', () => { theme=theme==='dark'?'light':'dark'; applyTheme(); });
+
+/* ── hash-based invite link ── */
+(function checkHash() {
+  const rid = location.hash.replace('#', '').toUpperCase().trim();
+  if (!rid) return;
+  // Pre-fill room ID and scroll join card into view
+  $('join-rid').value = rid;
+  $('join-name').focus();
+  // Collapse the "Create a room" card visually to make join more prominent
+  const createCard = $('s-welcome').querySelector('.card');
+  createCard.style.opacity = '.45';
+  createCard.style.pointerEvents = 'none';
+  $('join-name').scrollIntoView({ behavior: 'smooth', block: 'center' });
+})();
 </script>
 </body>
 </html>

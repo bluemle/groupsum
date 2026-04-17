@@ -297,6 +297,7 @@ const S = {
 
   heartbeatTimer:null,  // host: interval sending pings
   hostWatchdog:null,    // guest: timeout detecting host gone
+  promotionStarted:false,
   hostPeerId:null,      // actual PeerJS peer ID of current host (may differ from roomId)
   hostGen:0,            // generation counter — incremented on each host handover
 };
@@ -650,6 +651,8 @@ function electNewHost() {
 }
 
 function attemptHostPromotion() {
+  if (S.promotionStarted) return;
+  S.promotionStarted = true;
   const elected = electNewHost();
   if (!elected) { setConn('No participants left', 'err'); return; }
   const newGen = (S.hostGen || 0) + 1;
@@ -719,11 +722,10 @@ function promoteToHost(gen) {
 
   newPeer.on('error', e => {
     newPeer.destroy();
-    // Should never get unavailable-id since gen is always incremented
-    // But if it does, try next gen
     if (e.type === 'unavailable-id') {
-      setConn('Retrying…', '');
-      setTimeout(() => promoteToHost(gen + 1), 1000);
+      // Another guest already claimed this gen — they won the election; reconnect as guest
+      setConn('Reconnecting to new host…', '');
+      setTimeout(() => reconnectToNewHost(gen), 1000);
     } else {
       setConn('Promotion error: ' + e.type, 'err');
     }
@@ -731,6 +733,7 @@ function promoteToHost(gen) {
 }
 
 function reconnectToNewHost(gen) {
+  S.promotionStarted = false;
   setConn('Reconnecting…', '');
   if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
   const peer = new Peer(undefined, {host:'peerjs.92k.de',port:443,secure:true,path:'/',debug:0}); S.peer = peer;

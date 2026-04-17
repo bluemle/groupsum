@@ -401,7 +401,8 @@ function onGuestMsg(msg) {
       // No ping for 7s → host gone
       setConn('Host disconnected — trying to become host…', 'err');
       if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
-      attemptHostClaim(S.roomId, S.myName);
+      // Wait 6s for PeerJS server to release the host peer ID before claiming
+      setTimeout(() => attemptHostClaim(S.roomId, S.myName), 6000);
     }, 7000);
     return;
 
@@ -702,13 +703,13 @@ function attemptHostClaim(rid, name) {
   testPeer.on('error', e => {
     testPeer.destroy();
     if (e.type === 'unavailable-id') {
-      // Peer ID still reserved on server — retry after another delay
-      // After 3 retries assume another guest claimed host; reconnect as guest
+      // Peer ID still reserved — retry every 3s, up to 8 times (~24s total)
       const retries = (attemptHostClaim._retries = (attemptHostClaim._retries||0) + 1);
-      if (retries <= 4) {
-        setConn(`Host slot busy — retrying (${retries}/4)…`, '');
-        setTimeout(() => attemptHostClaim(rid, name), 2000 * retries);
+      if (retries <= 8) {
+        setConn(`Waiting for host slot… (${retries}/8)`, '');
+        setTimeout(() => attemptHostClaim(rid, name), 3000);
       } else {
+        // After 8 retries, another guest must have claimed host — join as guest
         attemptHostClaim._retries = 0;
         setConn('Reconnecting as guest…', '');
         setTimeout(() => reconnectAsGuest(rid, name), 1000);
@@ -750,7 +751,8 @@ function startGuest(name, rid) {
       S.hostWatchdog = setTimeout(() => {
         setConn('Host disconnected — trying to become host…', 'err');
         if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
-        attemptHostClaim(S.roomId, S.myName);
+        // Wait 6s for PeerJS server to release the host peer ID before claiming
+        setTimeout(() => attemptHostClaim(S.roomId, S.myName), 6000);
       }, 7000);
     });
     conn.on('data',  msg => onGuestMsg(msg));
@@ -759,7 +761,7 @@ function startGuest(name, rid) {
       // Destroy current peer first so we get a clean slate, then attempt claim
       if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
       // Delay to let PeerJS signaling server release the old host peer ID
-      setTimeout(() => attemptHostClaim(S.roomId, S.myName), 2000);
+      setTimeout(() => attemptHostClaim(S.roomId, S.myName), 6000);
     });
     conn.on('error', ()  => {
       $('join-err').textContent='Could not connect. Check the Room ID.';

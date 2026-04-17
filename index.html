@@ -599,6 +599,90 @@ function startHost(name) {
   });
 }
 
+/* ── promote guest to host after host disconnect ── */
+function attemptHostClaim(rid, name) {
+  // Try to create a peer with the room ID — succeeds only if host is gone
+  const testPeer = new Peer(rid, {debug:0});
+  testPeer.on('open', () => {
+    // We claimed the host slot — promote ourselves
+    if (S.peer) S.peer.destroy();
+    S.peer = testPeer;
+    S.myId = rid;
+    S.isHost = true;
+    S.hostConn = null;
+    S.guestMap = {};
+    // Keep existing members but clear protocol state for fresh round
+    S.sharesIn = {}; S.colSumsIn = {};
+    setConn('You are now the host','ok');
+    $('role-lbl').textContent = 'Host (promoted)';
+    history.replaceState(null, '', '#' + rid);
+    const inviteUrl = location.href.split('#')[0] + '#' + rid;
+    $('share-link-inp').value = inviteUrl;
+    $('share-link-box').style.display = '';
+    // Show host UI
+    if (!S.locked) {
+      $('host-card').style.display = '';
+      $('rid-display').textContent = rid;
+      updateLockBtn();
+    } else {
+      // Was mid-round: reset to start of new round as host
+      S.locked = false; S.lockedIds = [];
+      Object.values(S.members).forEach(m => m.submitted = false);
+      $('result-wrap').style.display = 'none';
+      $('num-card').style.display = 'none';
+      $('num-card').style.opacity = ''; $('num-card').style.pointerEvents = '';
+      $('host-card').style.display = '';
+      $('rid-display').textContent = rid;
+      $('btn-reset').style.display = 'none';
+      $('btn-edit-participants').style.display = 'none';
+      setBanner('You became the host — edit participants and lock when ready', 'info');
+      updateLockBtn();
+    }
+    // Accept incoming connections from other guests
+    testPeer.on('connection', conn => {
+      const pid = conn.peer; S.guestMap[pid] = {conn};
+      conn.on('data',  msg => onHostMsg(msg, pid));
+      conn.on('close', ()  => {
+        delete S.guestMap[pid];
+        if (!S.locked) { delete S.members[pid]; renderMembers(); updateLockBtn(); }
+      });
+      // Tell reconnecting guest who they are and current member list
+      const snap = Object.fromEntries(
+        Object.entries(S.members).map(([id,m]) => [id, {name:m.name,submitted:m.submitted}])
+      );
+      conn.on('open', () => {
+        conn.send({type:'welcome', myId:pid, members:snap});
+        if (S.locked) conn.send({type:'lock', lockedIds:S.lockedIds,
+          names:Object.fromEntries(S.lockedIds.map(id=>[id,S.members[id]?.name||'?']))});
+      });
+    });
+    renderMembers();
+  });
+  testPeer.on('error', e => {
+    // Room ID already taken → real host is back or another guest claimed it first
+    // Try to reconnect as guest after short delay
+    testPeer.destroy();
+    if (e.type === 'unavailable-id') {
+      setTimeout(() => reconnectAsGuest(rid, name), 1500);
+    } else {
+      setConn('Could not reconnect','err');
+    }
+  });
+}
+
+function reconnectAsGuest(rid, name) {
+  const peer = new Peer(undefined, {debug:0}); S.peer = peer;
+  peer.on('open', myId => {
+    S.myId = myId; S.isHost = false;
+    const conn = peer.connect(rid, {reliable:true}); S.hostConn = conn;
+    conn.on('open',  ()  => { setConn('Reconnected','ok'); conn.send({type:'hello', name}); });
+    conn.on('data',  msg => onGuestMsg(msg));
+    conn.on('close', ()  => { setConn('Disconnected','err'); attemptHostClaim(rid, name); });
+    conn.on('error', ()  => setConn('Could not reconnect','err'));
+  });
+  peer.on('error', () => setConn('Could not reconnect','err'));
+}
+
 /* ── start as guest ── */
 function startGuest(name, rid) {
   S.myName=name; S.isHost=false; S.roomId=rid;
@@ -610,7 +694,10 @@ function startGuest(name, rid) {
     const conn=peer.connect(rid,{reliable:true}); S.hostConn=conn;
     conn.on('open',  ()  => { setConn('Connected','ok'); $('role-lbl').textContent='Guest'; conn.send({type:'hello',name}); });
     conn.on('data',  msg => onGuestMsg(msg));
-    conn.on('close', ()  => setConn('Disconnected','err'));
+    conn.on('close', ()  => {
+      setConn('Host disconnected — trying to reconnect…','err');
+      attemptHostClaim(S.roomId, S.myName);
+    });
     conn.on('error', ()  => {
       $('join-err').textContent='Could not connect. Check the Room ID.';
       $('join-err').style.display='';

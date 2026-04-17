@@ -298,6 +298,7 @@ const S = {
   heartbeatTimer:null,  // host: interval sending pings
   hostWatchdog:null,    // guest: timeout detecting host gone
   promotionStarted:false,
+  electionPeers:null,       // authoritative peer list from last host ping
   hostPeerId:null,      // actual PeerJS peer ID of current host (may differ from roomId)
   hostGen:0,            // generation counter — incremented on each host handover
 };
@@ -409,6 +410,7 @@ function onGuestMsg(msg) {
   if (msg.type === 'ping') {
     // Reset watchdog — host is alive; update known generation
     if (msg.gen !== undefined) S.hostGen = msg.gen;
+    if (msg.peers) S.electionPeers = msg.peers; // authoritative peer list for election
     if (S.hostWatchdog) clearTimeout(S.hostWatchdog);
     S.hostWatchdog = setTimeout(() => {
       // No ping for 7s → host gone
@@ -657,9 +659,11 @@ function hostPeerIdForGen(roomId, gen) {
 }
 
 function electNewHost() {
-  const candidates = Object.keys(S.members)
-    .filter(id => id !== S.hostPeerId && S.members[id])
-    .sort();
+  // Use the host-authoritative peer list from the last ping (same on all guests)
+  const list = (S.electionPeers && S.electionPeers.length)
+    ? S.electionPeers
+    : Object.keys(S.members).sort();
+  const candidates = list.filter(id => id !== S.hostPeerId);
   return candidates.length ? candidates[0] : null;
 }
 
@@ -713,7 +717,7 @@ function promoteToHost(gen) {
     setBanner('You became the host — same Room ID, same invite link!', 'info');
 
     S.heartbeatTimer = setInterval(() => {
-      if (S.isHost) bcast({type:'ping', gen});
+      if (S.isHost) bcast({type:'ping', gen, peers: Object.keys(S.members).sort()});
     }, 3000);
     renderMembers(); updateLockBtn();
 
@@ -747,6 +751,7 @@ function promoteToHost(gen) {
 
 function reconnectToNewHost(gen) {
   S.promotionStarted = false;
+  S.electionPeers = null;
   setConn('Reconnecting…', '');
   if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
   const peer = new Peer(undefined, {host:'peerjs.92k.de',port:443,secure:true,path:'/',debug:0}); S.peer = peer;

@@ -192,7 +192,7 @@
     </div>
 
     <div class="center" style="margin-top:.5rem;gap:.625rem;flex-wrap:wrap">
-      <button class="btn ghost" id="btn-reset">
+      <button class="btn ghost" id="btn-reset" style="display:none">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.6"/></svg>
         New round
       </button>
@@ -200,6 +200,7 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         Edit participants
       </button>
+      <div id="guest-waiting-nr" style="display:none;font-size:.8125rem;color:var(--faint);padding:.5rem 0">Waiting for host to start the next round…</div>
     </div>
   </div>
 </div>
@@ -364,6 +365,12 @@ function onHostMsg(msg, fromId) {
       showResult(result);
     }
 
+  } else if (msg.type === 'i_submitted') {
+    if (!S.locked || !S.lockedIds.includes(fromId)) return;
+    if (S.members[fromId]) S.members[fromId].submitted = true;
+    renderMembers();
+    bcast({ type:'member_submitted', id:fromId }, fromId);
+
   } else if (msg.type === 'reset') {
     doReset(false); bcast({ type:'reset' });
   }
@@ -419,6 +426,7 @@ function onGuestMsg(msg) {
     $('num-inp').value=''; $('num-inp').disabled=false; $('btn-submit').disabled=false;
     $('result-wrap').style.display='none';
     $('num-card').style.display='none'; $('num-card').style.opacity=''; $('num-card').style.pointerEvents='';
+    $('guest-waiting-nr').style.display='none';
     setBanner('Host is editing participants — please wait…', 'info');
     renderMembers();
   }
@@ -449,8 +457,12 @@ function submitNumber() {
   $('num-inp').disabled    = true;
   $('num-hint').innerHTML  = '<strong>Fragments sent.</strong> Your number never left this device.';
 
-  const shares = makeShares(v, S.lockedIds, S.myId);    // uses FROZEN list
-  r1_receive(S.myId, shares[S.myId]);                     // own share stored locally
+  const shares = makeShares(v, S.lockedIds, S.myId);
+  // Mark self as submitted immediately for everyone
+  if (S.members[S.myId]) S.members[S.myId].submitted = true;
+  renderMembers();
+  toHost({ type:'i_submitted', id:S.myId });
+  r1_receive(S.myId, shares[S.myId]);
   S.lockedIds.forEach(id => {
     if (id !== S.myId) toHost({ type:'share_for', to:id, share:shares[id] });
   });
@@ -488,7 +500,9 @@ function lockRoom() {
   $('num-card').style.display  = '';
   $('host-card').style.display = 'none';
   setBanner('Room locked — enter your secret number below', 'info');
-  if (S.isHost) $('btn-edit-participants').style.display='';
+  $('btn-reset').style.display = 'none';
+  $('btn-edit-participants').style.display = 'none';
+  $('guest-waiting-nr').style.display = 'none';
 }
 
 /* ── reset (new round, keep same participants) ── */
@@ -503,7 +517,9 @@ function doReset(andBcast) {
   $('num-card').style.display=''; $('num-card').style.opacity=''; $('num-card').style.pointerEvents='';
   setBanner('New round — enter your next secret number', 'info');
   renderMembers();
-  if (S.isHost) { $('btn-edit-participants').style.display=''; }
+  $('guest-waiting-nr').style.display = 'none';
+  $('btn-edit-participants').style.display = 'none';
+  if (S.isHost) { $('btn-reset').style.display = ''; }
   if (andBcast) { if(S.isHost) bcast({type:'reset'}); else toHost({type:'reset'}); }
 }
 

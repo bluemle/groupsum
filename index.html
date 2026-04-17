@@ -298,6 +298,7 @@ const S = {
   heartbeatTimer:null,  // host: interval sending pings
   hostWatchdog:null,    // guest: timeout detecting host gone
   hostPeerId:null,      // actual PeerJS peer ID of current host (may differ from roomId)
+  hostGen:0,            // generation counter — incremented on each host handover
 };
 
 /* ── render ── */
@@ -396,7 +397,8 @@ function onHostMsg(msg, fromId) {
 function onGuestMsg(msg) {
 
   if (msg.type === 'ping') {
-    // Reset watchdog — host is alive
+    // Reset watchdog — host is alive; update known generation
+    if (msg.gen !== undefined) S.hostGen = msg.gen;
     if (S.hostWatchdog) clearTimeout(S.hostWatchdog);
     S.hostWatchdog = setTimeout(() => {
       // No ping for 7s → host gone
@@ -600,7 +602,7 @@ function startHost(name) {
   showScreen('s-room'); setConn('Starting…');
   const peer = new Peer(rid, {debug:0}); S.peer=peer;
   peer.on('open', id => {
-    S.myId=id; S.hostPeerId=id;
+    S.myId=id; S.hostPeerId=id; S.hostGen=0;
     S.members[id]={ name, submitted:false };
     setConn('Room open · waiting for guests','ok');
     $('rid-display').textContent=rid;
@@ -634,6 +636,12 @@ function startHost(name) {
 
 /* ── promote guest to host after host disconnect ── */
 /* ── host election after host disconnect ── */
+// Generation-based host IDs: roomId, roomId_1, roomId_2, ...
+// Each handover increments the generation — no ID reuse, instant claim.
+function hostPeerIdForGen(roomId, gen) {
+  return gen === 0 ? roomId : roomId + '_' + gen;
+}
+
 function electNewHost() {
   const candidates = Object.keys(S.members)
     .filter(id => id !== S.hostPeerId && S.members[id])
@@ -644,42 +652,41 @@ function electNewHost() {
 function attemptHostPromotion() {
   const elected = electNewHost();
   if (!elected) { setConn('No participants left', 'err'); return; }
+  const newGen = (S.hostGen || 0) + 1;
   if (elected === S.myId) {
-    claimRoomId(S.roomId, S.myName, 0);
+    promoteToHost(newGen);
   } else {
-    // Not elected — keep retrying to connect to the room ID
-    // The elected guest will reclaim it eventually
-    setConn('Waiting for new host…', '');
-    retryJoinAsGuest(S.roomId, S.myName, 0);
+    reconnectToNewHost(newGen);
   }
 }
 
-function claimRoomId(rid, name, attempt) {
-  const maxAttempts = 20;
-  setConn(`Becoming host… (${attempt+1}/${maxAttempts})`, '');
-  const claimPeer = new Peer(rid, {debug:0});
-  claimPeer.on('open', peerId => {
-    if (S.peer && S.peer !== claimPeer) { try { S.peer.destroy(); } catch(e){} }
-    S.peer = claimPeer; S.myId = peerId; S.hostPeerId = peerId;
+function promoteToHost(gen) {
+  const newPeerId = hostPeerIdForGen(S.roomId, gen);
+  setConn('Becoming host…', '');
+  const newPeer = new Peer(newPeerId, {debug:0});
+
+  newPeer.on('open', peerId => {
+    if (S.peer) { try { S.peer.destroy(); } catch(e){} }
+    S.peer = newPeer; S.myId = peerId; S.hostPeerId = peerId; S.hostGen = gen;
     S.isHost = true; S.hostConn = null; S.guestMap = {};
     S.locked = false; S.lockedIds = [];
     S.sharesIn = {}; S.colSumsIn = {}; S.resultShown = false;
     if (S.hostWatchdog)   { clearTimeout(S.hostWatchdog);   S.hostWatchdog = null; }
     if (S.heartbeatTimer) { clearInterval(S.heartbeatTimer); S.heartbeatTimer = null; }
 
-    // Fix member list: remove old host, update my entry
-    const oldMyId = Object.keys(S.members).find(id => id !== rid && S.members[id]?.name === name);
+    // Fix member list
+    const oldMyId = Object.keys(S.members).find(id => id !== S.hostPeerId && S.members[id]?.name === S.myName);
     if (oldMyId) delete S.members[oldMyId];
-    delete S.members[rid];
-    S.members[peerId] = { name, submitted: false };
+    delete S.members[hostPeerIdForGen(S.roomId, gen - 1)];
+    S.members[peerId] = { name: S.myName, submitted: false };
 
     $('num-inp').value=''; $('num-inp').disabled=false; $('btn-submit').disabled=false;
     $('result-wrap').style.display='none';
     $('num-card').style.display='none'; $('num-card').style.opacity=''; $('num-card').style.pointerEvents='';
     $('host-card').style.display='';
-    $('rid-display').textContent = rid;
-    history.replaceState(null, '', '#' + rid);
-    const inviteUrl = location.href.split('#')[0] + '#' + rid;
+    $('rid-display').textContent = S.roomId;
+    history.replaceState(null, '', '#' + S.roomId);
+    const inviteUrl = location.href.split('#')[0] + '#' + S.roomId;
     $('share-link-inp').value = inviteUrl;
     $('share-link-box').style.display = '';
     $('btn-reset').style.display = '';
@@ -689,10 +696,12 @@ function claimRoomId(rid, name, attempt) {
     $('role-lbl').textContent = 'Host (promoted)';
     setBanner('You became the host — same Room ID, same invite link!', 'info');
 
-    S.heartbeatTimer = setInterval(() => { if (S.isHost) bcast({type:'ping'}); }, 3000);
+    S.heartbeatTimer = setInterval(() => {
+      if (S.isHost) bcast({type:'ping', gen});
+    }, 3000);
     renderMembers(); updateLockBtn();
 
-    claimPeer.on('connection', conn => {
+    newPeer.on('connection', conn => {
       const pid = conn.peer; S.guestMap[pid] = {conn};
       conn.on('data',  msg => onHostMsg(msg, pid));
       conn.on('close', () => {
@@ -703,48 +712,46 @@ function claimRoomId(rid, name, attempt) {
         const snap = Object.fromEntries(
           Object.entries(S.members).map(([id,m]) => [id, {name:m.name, submitted:m.submitted}])
         );
-        conn.send({type:'welcome', myId:pid, members:snap});
+        conn.send({type:'welcome', myId:pid, members:snap, hostGen:gen});
       });
     });
   });
-  claimPeer.on('error', e => {
-    claimPeer.destroy();
-    if (e.type === 'unavailable-id' && attempt + 1 < maxAttempts) {
-      setTimeout(() => claimRoomId(rid, name, attempt + 1), 5000);
-    } else if (attempt + 1 >= maxAttempts) {
-      // Give up — reconnect as guest (someone else claimed it)
-      setConn('Reconnecting as guest…', '');
-      retryJoinAsGuest(rid, name, 0);
+
+  newPeer.on('error', e => {
+    newPeer.destroy();
+    // Should never get unavailable-id since gen is always incremented
+    // But if it does, try next gen
+    if (e.type === 'unavailable-id') {
+      setConn('Retrying…', '');
+      setTimeout(() => promoteToHost(gen + 1), 1000);
     } else {
-      setConn('Promotion error', 'err');
+      setConn('Promotion error: ' + e.type, 'err');
     }
   });
 }
 
-function retryJoinAsGuest(rid, name, attempt) {
-  const maxAttempts = 20;
+function reconnectToNewHost(gen) {
+  const targetPeerId = hostPeerIdForGen(S.roomId, gen);
+  setConn('Reconnecting…', '');
   if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
   const peer = new Peer(undefined, {debug:0}); S.peer = peer;
   peer.on('open', myId => {
-    S.myId = myId; S.isHost = false; S.hostPeerId = rid;
-    const conn = peer.connect(rid, {reliable:true}); S.hostConn = conn;
+    S.myId = myId; S.isHost = false; S.hostPeerId = targetPeerId;
+    const conn = peer.connect(targetPeerId, {reliable:true}); S.hostConn = conn;
     let opened = false;
     const timeout = setTimeout(() => {
       if (!opened) {
-        try { conn.close(); peer.destroy(); } catch(e){}
+        try { peer.destroy(); } catch(e){}
         S.peer = null;
-        if (attempt + 1 < maxAttempts) {
-          setConn(`Reconnecting… (${attempt+1}/${maxAttempts})`, '');
-          setTimeout(() => retryJoinAsGuest(rid, name, attempt + 1), 5000);
-        } else {
-          setConn('Could not reconnect', 'err');
-        }
+        // New host not ready yet — try next gen or retry same gen
+        setConn('Waiting for new host…', '');
+        setTimeout(() => reconnectToNewHost(gen), 2000);
       }
-    }, 4000);
+    }, 3000);
     conn.on('open', () => {
       opened = true; clearTimeout(timeout);
       setConn('Reconnected', 'ok'); $('role-lbl').textContent = 'Guest';
-      conn.send({type:'hello', name});
+      conn.send({type:'hello', name: S.myName});
       if (S.hostWatchdog) clearTimeout(S.hostWatchdog);
       S.hostWatchdog = setTimeout(() => {
         setConn('Host disconnected — trying to become host…', 'err');
@@ -755,24 +762,26 @@ function retryJoinAsGuest(rid, name, attempt) {
     conn.on('data',  msg => onGuestMsg(msg));
     conn.on('close', () => {
       if (!opened) return;
+      clearTimeout(timeout);
       setConn('Disconnected', 'err');
       if (S.hostWatchdog) clearTimeout(S.hostWatchdog);
       attemptHostPromotion();
     });
     conn.on('error', () => {
       clearTimeout(timeout);
-      if (!opened && attempt + 1 < maxAttempts) {
-        setTimeout(() => retryJoinAsGuest(rid, name, attempt + 1), 5000);
+      if (!opened) {
+        try { peer.destroy(); } catch(e){}
+        S.peer = null;
+        setTimeout(() => reconnectToNewHost(gen), 2000);
       }
     });
   });
   peer.on('error', () => {
-    if (attempt + 1 < maxAttempts)
-      setTimeout(() => retryJoinAsGuest(rid, name, attempt + 1), 5000);
-    else setConn('Could not reconnect', 'err');
+    setTimeout(() => reconnectToNewHost(gen), 2000);
   });
 }
 
+/* ── start as guest ── */
 /* ── start as guest ── */
 /* ── start as guest ── */
 /* ── start as guest ── */
@@ -810,10 +819,9 @@ function startGuest(name, rid) {
       attemptHostPromotion();
     });
     conn.on('error', ()  => {
-      // Auto-retry: host may be mid-promotion, keep trying for up to 90s
       peer.destroy(); S.peer = null;
       setConn('Room not found — retrying…', '');
-      retryJoinAsGuest(rid, name, 0);
+      setTimeout(() => reconnectToNewHost(S.hostGen || 0), 2000);
     });
   });
   peer.on('error', () => {

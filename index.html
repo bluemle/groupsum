@@ -248,7 +248,11 @@ function genId() {
 }
 function showScreen(id) {
   ['s-welcome','s-room'].forEach(s => $(s).classList.toggle('active', s===id));
-  if (id === 's-welcome') history.replaceState(null, '', location.pathname);
+  if (id === 's-welcome') {
+    history.replaceState(null, '', location.pathname);
+    if (S.hostWatchdog) { clearTimeout(S.hostWatchdog); S.hostWatchdog = null; }
+    if (S.heartbeatTimer) { clearInterval(S.heartbeatTimer); S.heartbeatTimer = null; }
+  }
 }
 function setConn(txt, cls) {
   const b = $('conn-badge');
@@ -290,6 +294,9 @@ const S = {
   sharesIn:{},     // round 1: { senderId: intShare }    — keyed, dedup
   colSumsIn:{},    // round 2: { senderId: intColSum }   — keyed, dedup (host only)
   resultShown:false,
+
+  heartbeatTimer:null,  // host: interval sending pings
+  hostWatchdog:null,    // guest: timeout detecting host gone
 };
 
 /* ── render ── */
@@ -387,7 +394,18 @@ function onHostMsg(msg, fromId) {
 /* ── GUEST message handler ── */
 function onGuestMsg(msg) {
 
-  if (msg.type === 'welcome') {
+  if (msg.type === 'ping') {
+    // Reset watchdog — host is alive
+    if (S.hostWatchdog) clearTimeout(S.hostWatchdog);
+    S.hostWatchdog = setTimeout(() => {
+      // No ping for 7s → host gone
+      setConn('Host disconnected — trying to become host…', 'err');
+      if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
+      attemptHostClaim(S.roomId, S.myName);
+    }, 7000);
+    return;
+
+  } else if (msg.type === 'welcome') {
     S.members = {};
     Object.entries(msg.members).forEach(([id,m]) =>
       S.members[id] = { name:m.name, submitted:m.submitted }
@@ -586,6 +604,10 @@ function startHost(name) {
     $('rid-display').textContent=rid;
     $('role-lbl').textContent='Host';
     $('host-card').style.display='';
+    // Heartbeat: ping all guests every 3s so they can detect host disconnect
+    S.heartbeatTimer = setInterval(() => {
+      if (S.isHost) bcast({ type:'ping' });
+    }, 3000);
     // Set hash and show invite link
     history.replaceState(null, '', '#' + rid);
     const inviteUrl = location.href.split('#')[0] + '#' + rid;
@@ -616,6 +638,7 @@ function attemptHostClaim(rid, name) {
   testPeer.on('open', () => {
     // ── Claimed! Promote this guest to host ──
     attemptHostClaim._retries = 0;
+    if (S.hostWatchdog) { clearTimeout(S.hostWatchdog); S.hostWatchdog = null; }
     if (S.peer && S.peer !== testPeer) S.peer.destroy();
     S.peer    = testPeer;
     S.myId    = rid;
@@ -718,7 +741,18 @@ function startGuest(name, rid) {
   peer.on('open', myId => {
     S.myId=myId;
     const conn=peer.connect(rid,{reliable:true}); S.hostConn=conn;
-    conn.on('open',  ()  => { setConn('Connected','ok'); $('role-lbl').textContent='Guest'; conn.send({type:'hello',name}); });
+    conn.on('open',  ()  => {
+      setConn('Connected','ok');
+      $('role-lbl').textContent='Guest';
+      conn.send({type:'hello',name});
+      // Start watchdog immediately — first ping expected within 7s
+      if (S.hostWatchdog) clearTimeout(S.hostWatchdog);
+      S.hostWatchdog = setTimeout(() => {
+        setConn('Host disconnected — trying to become host…', 'err');
+        if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
+        attemptHostClaim(S.roomId, S.myName);
+      }, 7000);
+    });
     conn.on('data',  msg => onGuestMsg(msg));
     conn.on('close', ()  => {
       setConn('Host disconnected — trying to become host…','err');

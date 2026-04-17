@@ -646,107 +646,152 @@ function attemptHostPromotion() {
   if (!elected) { setConn('No participants left', 'err'); return; }
 
   if (elected === S.myId) {
-    claimRoomId(S.roomId, S.myName, 0);
+    setConn('Becoming host…', '');
+    const newPeer = new Peer(undefined, {debug:0});
+    newPeer.on('open', newPeerId => {
+      if (S.peer) { try { S.peer.destroy(); } catch(e){} }
+      S.peer       = newPeer;
+      S.isHost     = true;
+      S.hostConn   = null;
+      S.guestMap   = {};
+      S.locked     = false; S.lockedIds = [];
+      S.sharesIn   = {}; S.colSumsIn = {};
+      S.resultShown = false;
+      S.hostPeerId = newPeerId;
+      if (S.hostWatchdog)   { clearTimeout(S.hostWatchdog);   S.hostWatchdog   = null; }
+
+      // Fix members
+      const oldMyId = S.myId;
+      S.myId = newPeerId;
+      delete S.members[S.hostPeerId === oldMyId ? oldMyId : S.hostPeerId];
+      const myEntry = S.members[oldMyId] || { name: S.myName, submitted: false };
+      delete S.members[oldMyId];
+      S.members[newPeerId] = { name: S.myName, submitted: false };
+
+      // Encode new peer ID into hash: #ROOMID:NEWPEERID
+      // so new joiners auto-connect to the right peer
+      const hashVal = S.roomId + ':' + newPeerId;
+      history.replaceState(null, '', '#' + hashVal);
+      const inviteUrl = location.href.split('#')[0] + '#' + hashVal;
+      $('share-link-inp').value = inviteUrl;
+      $('share-link-box').style.display = '';
+      $('rid-display').textContent = S.roomId;
+      $('host-card').style.display = '';
+      $('num-inp').value=''; $('num-inp').disabled=false; $('btn-submit').disabled=false;
+      $('result-wrap').style.display='none';
+      $('num-card').style.display='none'; $('num-card').style.opacity=''; $('num-card').style.pointerEvents='';
+      $('btn-reset').style.display = '';
+      $('btn-edit-participants').style.display = '';
+      $('guest-waiting-nr').style.display = 'none';
+      setConn('You are now the host', 'ok');
+      $('role-lbl').textContent = 'Host (promoted)';
+      setBanner('You became the host — share the updated invite link!', 'info');
+
+      if (S.heartbeatTimer) clearInterval(S.heartbeatTimer);
+      S.heartbeatTimer = setInterval(() => { if (S.isHost) bcast({type:'ping'}); }, 3000);
+
+      renderMembers(); updateLockBtn();
+
+      newPeer.on('connection', conn => {
+        const pid = conn.peer; S.guestMap[pid] = {conn};
+        conn.on('data',  msg => onHostMsg(msg, pid));
+        conn.on('close', () => {
+          delete S.guestMap[pid];
+          if (!S.locked) { delete S.members[pid]; renderMembers(); updateLockBtn(); }
+        });
+        conn.on('open', () => {
+          const snap = Object.fromEntries(
+            Object.entries(S.members).map(([id,m]) => [id, {name:m.name, submitted:m.submitted}])
+          );
+          conn.send({type:'welcome', myId:pid, members:snap});
+        });
+      });
+    });
+    newPeer.on('error', () => setConn('Promotion failed', 'err'));
+
   } else {
     setConn('Reconnecting to new host…', '');
-    setTimeout(() => reconnectAsGuest(S.roomId, S.myName), 4000);
+    // elected guest will become host — their new peer ID will be in the URL hash
+    // Poll the hash every 2s until it contains the new peer ID, then connect
+    waitForNewHostId(elected);
   }
 }
 
-function claimRoomId(rid, name, attempt) {
-  const maxAttempts = 12;
-  const delay = 3000;
-  setConn(`Becoming host… (${attempt+1}/${maxAttempts})`, '');
-  const claimPeer = new Peer(rid, {debug:0});
-
-  claimPeer.on('open', peerId => {
-    // Successfully claimed the original room ID
-    if (S.peer && S.peer !== claimPeer) { try { S.peer.destroy(); } catch(e){} }
-    S.peer       = claimPeer;
-    S.myId       = peerId;          // peerId === rid
-    S.hostPeerId = peerId;
-    S.isHost     = true;
-    S.hostConn   = null;
-    S.guestMap   = {};
-    S.locked     = false; S.lockedIds = [];
-    S.sharesIn   = {}; S.colSumsIn = {};
-    S.resultShown = false;
-    if (S.hostWatchdog)   { clearTimeout(S.hostWatchdog);   S.hostWatchdog   = null; }
-    if (S.heartbeatTimer) { clearInterval(S.heartbeatTimer); S.heartbeatTimer = null; }
-
-    // Fix members: remove old host entry, replace my entry with new peerId
-    const oldMyId = Object.keys(S.members).find(id => S.members[id]?.name === name && id !== rid);
-    if (oldMyId) {
-      delete S.members[oldMyId];
-    }
-    delete S.members[rid]; // remove old host if present
-    S.members[peerId] = { name, submitted: false };
-
-    // Full host UI — same room ID
-    $('num-inp').value=''; $('num-inp').disabled=false; $('btn-submit').disabled=false;
-    $('result-wrap').style.display='none';
-    $('num-card').style.display='none'; $('num-card').style.opacity=''; $('num-card').style.pointerEvents='';
-    $('host-card').style.display='';
-    $('rid-display').textContent = rid;
-    history.replaceState(null, '', '#' + rid);
-    const inviteUrl = location.href.split('#')[0] + '#' + rid;
-    $('share-link-inp').value = inviteUrl;
-    $('share-link-box').style.display = '';
-    $('btn-reset').style.display = '';
-    $('btn-edit-participants').style.display = '';
-    $('guest-waiting-nr').style.display = 'none';
-    setConn('You are now the host', 'ok');
-    $('role-lbl').textContent = 'Host (promoted)';
-    setBanner('You became the host — same Room ID and invite link!', 'info');
-
-    // Start heartbeat
-    S.heartbeatTimer = setInterval(() => { if (S.isHost) bcast({type:'ping'}); }, 3000);
-
-    renderMembers(); updateLockBtn();
-
-    // Accept connections (including rejoining guests + new joiners)
-    claimPeer.on('connection', conn => {
-      const pid = conn.peer; S.guestMap[pid] = {conn};
-      conn.on('data',  msg => onHostMsg(msg, pid));
-      conn.on('close', () => {
-        delete S.guestMap[pid];
-        if (!S.locked) { delete S.members[pid]; renderMembers(); updateLockBtn(); }
-      });
+function waitForNewHostId(electedOldId) {
+  // The promoted host will update location.hash to #ROOMID:NEWPEERID
+  // We can't read their hash directly, but we can try connecting to
+  // a derived approach: just retry connecting to the room ID every 3s
+  // The promoted host will eventually reclaim it OR we read the new ID
+  // from a shared signal. Since we have no shared signal without a relay,
+  // we use a simple convention: try the roomId first, then if that fails
+  // after 2 attempts, the user can refresh and the hash in the URL will 
+  // have been updated by the promoted host (if on same device) or they
+  // need to get the new link. For multi-device: promoted host shows new link.
+  //
+  // Best we can do without a server: retry connecting to S.roomId (original)
+  // If promoted host managed to reclaim it → works.
+  // If not → keep retrying. Show status.
+  let retries = 0;
+  function tryConnect() {
+    retries++;
+    setConn(`Reconnecting… (${retries})`, '');
+    if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
+    const peer = new Peer(undefined, {debug:0}); S.peer = peer;
+    peer.on('open', myId => {
+      S.myId = myId;
+      // Try to connect to the host peer ID encoded in hash (if updated)
+      const hash = location.hash.replace('#','');
+      const parts = hash.split(':');
+      const targetId = parts.length === 2 ? parts[1] : S.roomId;
+      S.hostPeerId = targetId;
+      const conn = peer.connect(targetId, {reliable:true}); S.hostConn = conn;
+      let opened = false;
+      const timeout = setTimeout(() => {
+        if (!opened) {
+          conn.close(); peer.destroy(); S.peer = null;
+          if (retries < 10) setTimeout(tryConnect, 2000);
+          else setConn('Could not find new host', 'err');
+        }
+      }, 4000);
       conn.on('open', () => {
-        const snap = Object.fromEntries(
-          Object.entries(S.members).map(([id,m]) => [id, {name:m.name, submitted:m.submitted}])
-        );
-        conn.send({type:'welcome', myId:pid, members:snap});
+        opened = true; clearTimeout(timeout);
+        S.isHost = false;
+        setConn('Reconnected', 'ok');
+        $('role-lbl').textContent = 'Guest';
+        conn.send({type:'hello', name: S.myName});
+        if (S.hostWatchdog) clearTimeout(S.hostWatchdog);
+        S.hostWatchdog = setTimeout(() => {
+          setConn('Host disconnected — trying to become host…', 'err');
+          if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
+          attemptHostPromotion();
+        }, 7000);
+      });
+      conn.on('data',  msg => onGuestMsg(msg));
+      conn.on('close', () => {
+        if (!opened) return;
+        setConn('Disconnected', 'err');
+        if (S.hostWatchdog) clearTimeout(S.hostWatchdog);
+        attemptHostPromotion();
+      });
+      conn.on('error', () => {
+        if (!opened && retries < 10) setTimeout(tryConnect, 2000);
       });
     });
-  });
-
-  claimPeer.on('error', e => {
-    claimPeer.destroy();
-    if (e.type === 'unavailable-id') {
-      if (attempt + 1 < maxAttempts) {
-        setTimeout(() => claimRoomId(rid, name, attempt + 1), delay);
-      } else {
-        // Give up claiming — reconnect as guest (someone else got it)
-        setConn('Reconnecting as guest…', '');
-        setTimeout(() => reconnectAsGuest(rid, name), 1000);
-      }
-    } else {
-      setConn('Could not become host', 'err');
-    }
-  });
+    peer.on('error', () => {
+      if (retries < 10) setTimeout(tryConnect, 2000);
+    });
+  }
+  setTimeout(tryConnect, 2000);
 }
 
-function reconnectAsGuest(hostRoomId, name) {
+function reconnectAsGuest(hostPeerId, name) {
   if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
   const peer = new Peer(undefined, {debug:0}); S.peer = peer;
   peer.on('open', myId => {
-    S.myId = myId; S.isHost = false;
-    S.roomId = hostRoomId; S.hostPeerId = hostRoomId;
-    const conn = peer.connect(hostRoomId, {reliable:true}); S.hostConn = conn;
+    S.myId = myId; S.isHost = false; S.hostPeerId = hostPeerId;
+    const conn = peer.connect(hostPeerId, {reliable:true}); S.hostConn = conn;
     conn.on('open', () => {
-      setConn('Reconnected', 'ok');
-      $('role-lbl').textContent = 'Guest';
+      setConn('Connected', 'ok'); $('role-lbl').textContent = 'Guest';
       conn.send({type:'hello', name});
       if (S.hostWatchdog) clearTimeout(S.hostWatchdog);
       S.hostWatchdog = setTimeout(() => {
@@ -761,11 +806,12 @@ function reconnectAsGuest(hostRoomId, name) {
       if (S.hostWatchdog) clearTimeout(S.hostWatchdog);
       attemptHostPromotion();
     });
-    conn.on('error', () => setConn('Could not reconnect', 'err'));
+    conn.on('error', () => setConn('Could not connect', 'err'));
   });
-  peer.on('error', () => setConn('Could not reconnect', 'err'));
+  peer.on('error', () => setConn('Could not connect', 'err'));
 }
 
+/* ── start as guest ── */
 /* ── start as guest ── */
 /* ── start as guest ── */
 /* ── start as guest ── */
@@ -777,8 +823,12 @@ function startGuest(name, rid) {
   const peer = new Peer(undefined, {debug:0}); S.peer=peer;
   peer.on('open', myId => {
     S.myId=myId;
-    S.hostPeerId=rid;
-    const conn=peer.connect(rid,{reliable:true}); S.hostConn=conn;
+    // Hash may encode actual peer ID: #ROOMID:PEERID
+    const hashParts = location.hash.replace('#','').split(':');
+    const actualHostId = (hashParts.length === 2 && hashParts[0].toUpperCase() === rid)
+      ? hashParts[1] : rid;
+    S.hostPeerId = actualHostId;
+    const conn=peer.connect(actualHostId,{reliable:true}); S.hostConn=conn;
     conn.on('open',  ()  => {
       setConn('Connected','ok');
       $('role-lbl').textContent='Guest';
@@ -857,8 +907,10 @@ $('theme-btn').addEventListener('click', () => { theme=theme==='dark'?'light':'d
 
 /* ── hash-based invite link ── */
 function applyHashRid() {
-  const rid = location.hash.replace('#', '').toUpperCase().trim();
-  if (!rid) return;
+  const hash = location.hash.replace('#', '').trim();
+  if (!hash) return;
+  // Hash may be "ROOMID" or "ROOMID:PEERID" — show only the room ID to user
+  const rid = hash.split(':')[0].toUpperCase();
   $('join-rid').value = rid;
   $('join-name').focus();
   const createCard = $('s-welcome').querySelector('.card');

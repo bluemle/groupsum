@@ -742,11 +742,6 @@ function reconnectToNewHost(gen) {
 }
 
 /* ── start as guest ── */
-/* ── start as guest ── */
-/* ── start as guest ── */
-/* ── start as guest ── */
-/* ── start as guest ── */
-/* ── start as guest ── */
 /* ── probe host generations to find active host ── */
 function probeAndJoin(rid, name, peer, gen) {
   const targetId = hostPeerIdForGen(rid, gen);
@@ -810,7 +805,9 @@ function startGuest(name, rid) {
     S.myId=myId;
     probeAndJoin(rid, name, peer, 0);
   });
-  peer.on('error', () => {
+  peer.on('error', e => {
+    if (e.type === 'peer-unavailable') return;
+    if (S.hostConn && S.hostConn.open) return;
     $('join-err').textContent='Connection error. Please try again.';
     $('join-err').style.display='';
     showScreen('s-welcome');

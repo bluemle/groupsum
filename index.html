@@ -348,6 +348,15 @@ function onHostMsg(msg, fromId) {
 
   if (msg.type === 'hello') {
     if (S.locked) { toGuest(fromId, {type:'rejected'}); return; }
+    // Evict any stale entry with the same name (reconnecting guest with a new peer ID)
+    Object.keys(S.members).forEach(id => {
+      if (id !== fromId && S.members[id]?.name === msg.name) {
+        const stale = S.guestMap[id];
+        if (stale && stale.conn) { try { stale.conn.close(); } catch(e){} }
+        delete S.guestMap[id];
+        delete S.members[id];
+      }
+    });
     S.members[fromId] = { name:msg.name, submitted:false };
     const snap = Object.fromEntries(
       Object.entries(S.members).map(([id,m]) => [id, {name:m.name, submitted:m.submitted}])
@@ -418,7 +427,11 @@ function onGuestMsg(msg) {
     renderMembers();
 
   } else if (msg.type === 'joined') {
-    if (!S.locked) { S.members[msg.id]={name:msg.name,submitted:false}; renderMembers(); }
+    if (!S.locked) {
+      // Evict stale entry with same name (reconnected peer with new ID)
+      Object.keys(S.members).forEach(id => { if (id !== msg.id && S.members[id]?.name === msg.name) delete S.members[id]; });
+      S.members[msg.id]={name:msg.name,submitted:false}; renderMembers();
+    }
 
   } else if (msg.type === 'left') {
     if (!S.locked) { delete S.members[msg.id]; renderMembers(); }

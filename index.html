@@ -615,6 +615,7 @@ function attemptHostClaim(rid, name) {
 
   testPeer.on('open', () => {
     // ── Claimed! Promote this guest to host ──
+    attemptHostClaim._retries = 0;
     if (S.peer && S.peer !== testPeer) S.peer.destroy();
     S.peer    = testPeer;
     S.myId    = rid;
@@ -678,8 +679,17 @@ function attemptHostClaim(rid, name) {
   testPeer.on('error', e => {
     testPeer.destroy();
     if (e.type === 'unavailable-id') {
-      // Someone else already claimed host — reconnect as guest
-      setTimeout(() => reconnectAsGuest(rid, name), 1500);
+      // Peer ID still reserved on server — retry after another delay
+      // After 3 retries assume another guest claimed host; reconnect as guest
+      const retries = (attemptHostClaim._retries = (attemptHostClaim._retries||0) + 1);
+      if (retries <= 4) {
+        setConn(`Host slot busy — retrying (${retries}/4)…`, '');
+        setTimeout(() => attemptHostClaim(rid, name), 2000 * retries);
+      } else {
+        attemptHostClaim._retries = 0;
+        setConn('Reconnecting as guest…', '');
+        setTimeout(() => reconnectAsGuest(rid, name), 1000);
+      }
     } else {
       setConn('Could not reconnect', 'err');
     }
@@ -711,8 +721,11 @@ function startGuest(name, rid) {
     conn.on('open',  ()  => { setConn('Connected','ok'); $('role-lbl').textContent='Guest'; conn.send({type:'hello',name}); });
     conn.on('data',  msg => onGuestMsg(msg));
     conn.on('close', ()  => {
-      setConn('Host disconnected — trying to reconnect…','err');
-      attemptHostClaim(S.roomId, S.myName);
+      setConn('Host disconnected — trying to become host…','err');
+      // Destroy current peer first so we get a clean slate, then attempt claim
+      if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
+      // Delay to let PeerJS signaling server release the old host peer ID
+      setTimeout(() => attemptHostClaim(S.roomId, S.myName), 2000);
     });
     conn.on('error', ()  => {
       $('join-err').textContent='Could not connect. Check the Room ID.';
@@ -737,6 +750,7 @@ $('btn-join').addEventListener('click', () => {
 });
 $('join-rid').addEventListener('input',    e => e.target.value=e.target.value.toUpperCase());
 $('host-name').addEventListener('keydown', e => { if(e.key==='Enter') $('btn-create').click(); });
+$('join-name').addEventListener('keydown', e => { if(e.key==='Enter') $('btn-join').click(); });
 $('join-rid').addEventListener('keydown',  e => { if(e.key==='Enter') $('btn-join').click(); });
 $('btn-lock').addEventListener('click',   lockRoom);
 $('btn-submit').addEventListener('click', submitNumber);

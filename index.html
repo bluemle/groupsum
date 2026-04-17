@@ -518,8 +518,9 @@ function lockRoom() {
   $('num-card').style.display  = '';
   $('host-card').style.display = 'none';
   setBanner('Room locked — enter your secret number below', 'info');
-  $('btn-reset').style.display = 'none';
-  $('btn-edit-participants').style.display = 'none';
+  // Host can always start a new round or edit participants once locked
+  $('btn-reset').style.display = '';
+  $('btn-edit-participants').style.display = '';
   $('guest-waiting-nr').style.display = 'none';
 }
 
@@ -544,8 +545,13 @@ function doReset(andBcast) {
   setBanner('New round — enter your next secret number', 'info');
   renderMembers();
   $('guest-waiting-nr').style.display = 'none';
-  $('btn-edit-participants').style.display = 'none';
-  $('btn-reset').style.display = 'none';
+  if (S.isHost) {
+    $('btn-reset').style.display = '';
+    $('btn-edit-participants').style.display = '';
+  } else {
+    $('btn-reset').style.display = 'none';
+    $('btn-edit-participants').style.display = 'none';
+  }
   if (andBcast) { if(S.isHost) bcast({type:'reset'}); else toHost({type:'reset'}); }
 }
 
@@ -558,7 +564,10 @@ function unlockForEditing() {
   $('result-wrap').style.display='none';
   $('num-card').style.display='none'; $('num-card').style.opacity=''; $('num-card').style.pointerEvents='';
   $('host-card').style.display='';
-  $('btn-edit-participants').style.display='none';
+  // Keep New round visible; hide Edit participants (already in edit mode)
+  $('btn-reset').style.display = '';
+  $('btn-edit-participants').style.display = 'none';
+  $('guest-waiting-nr').style.display = 'none';
   setBanner('Editing participants — add or remove, then lock again', 'info');
   bcast({type:'unlock'});
   renderMembers(); updateLockBtn();
@@ -636,6 +645,9 @@ function attemptHostClaim(rid, name) {
       $('btn-reset').style.display = 'none';
       $('btn-edit-participants').style.display = 'none';
       setBanner('You became the host — edit participants and lock when ready', 'info');
+      $('btn-reset').style.display = '';
+      $('btn-edit-participants').style.display = '';
+      $('guest-waiting-nr').style.display = 'none';
       updateLockBtn();
     }
     // Accept incoming connections from other guests

@@ -600,7 +600,7 @@ function startHost(name) {
   S.myName=name; S.isHost=true;
   const rid=genId(); S.roomId=rid;
   showScreen('s-room'); setConn('Starting…');
-  const peer = new Peer(rid, {debug:0}); S.peer=peer;
+  const peer = new Peer(rid, {host:'peerjs.92k.de',port:443,secure:true,path:'/',debug:0}); S.peer=peer;
   peer.on('open', id => {
     S.myId=id; S.hostPeerId=id; S.hostGen=0;
     S.members[id]={ name, submitted:false };
@@ -663,7 +663,7 @@ function attemptHostPromotion() {
 function promoteToHost(gen) {
   const newPeerId = hostPeerIdForGen(S.roomId, gen);
   setConn('Becoming host…', '');
-  const newPeer = new Peer(newPeerId, {debug:0});
+  const newPeer = new Peer(newPeerId, {host:'peerjs.92k.de',port:443,secure:true,path:'/',debug:0});
 
   newPeer.on('open', peerId => {
     if (S.peer) { try { S.peer.destroy(); } catch(e){} }
@@ -733,7 +733,7 @@ function promoteToHost(gen) {
 function reconnectToNewHost(gen) {
   setConn('Reconnecting…', '');
   if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
-  const peer = new Peer(undefined, {debug:0}); S.peer = peer;
+  const peer = new Peer(undefined, {host:'peerjs.92k.de',port:443,secure:true,path:'/',debug:0}); S.peer = peer;
   peer.on('open', myId => {
     S.myId = myId; S.isHost = false;
     probeAndJoin(S.roomId, S.myName, peer, gen);
@@ -805,7 +805,7 @@ function startGuest(name, rid) {
   S.myName=name; S.isHost=false; S.roomId=rid;
   history.replaceState(null, '', location.pathname);
   showScreen('s-room'); setConn('Connecting…');
-  const peer = new Peer(undefined, {debug:0}); S.peer=peer;
+  const peer = new Peer(undefined, {host:'peerjs.92k.de',port:443,secure:true,path:'/',debug:0}); S.peer=peer;
   peer.on('open', myId => {
     S.myId=myId;
     probeAndJoin(rid, name, peer, 0);

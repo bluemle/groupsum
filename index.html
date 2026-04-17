@@ -191,10 +191,14 @@
       </div>
     </div>
 
-    <div class="center" style="margin-top:.5rem">
+    <div class="center" style="margin-top:.5rem;gap:.625rem;flex-wrap:wrap">
       <button class="btn ghost" id="btn-reset">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.6"/></svg>
         New round
+      </button>
+      <button class="btn ghost" id="btn-edit-participants" style="display:none">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Edit participants
       </button>
     </div>
   </div>
@@ -409,6 +413,14 @@ function onGuestMsg(msg) {
 
   } else if (msg.type === 'reset') {
     doReset(false);
+  } else if (msg.type === 'unlock') {
+    S.locked=false; S.lockedIds=[]; S.resultShown=false;
+    S.sharesIn={}; S.colSumsIn={};
+    $('num-inp').value=''; $('num-inp').disabled=false; $('btn-submit').disabled=false;
+    $('result-wrap').style.display='none';
+    $('num-card').style.display='none'; $('num-card').style.opacity=''; $('num-card').style.pointerEvents='';
+    setBanner('Host is editing participants — please wait…', 'info');
+    renderMembers();
   }
 }
 
@@ -476,21 +488,38 @@ function lockRoom() {
   $('num-card').style.display  = '';
   $('host-card').style.display = 'none';
   setBanner('Room locked — enter your secret number below', 'info');
+  if (S.isHost) $('btn-edit-participants').style.display='';
 }
 
-/* ── reset ── */
+/* ── reset (new round, keep same participants) ── */
 function doReset(andBcast) {
-  S.locked=false; S.lockedIds=[]; S.resultShown=false;
+  // Keep S.locked=true and S.lockedIds intact — same participants, new round
+  S.resultShown=false;
   S.sharesIn={}; S.colSumsIn={};
   Object.values(S.members).forEach(m => m.submitted=false);
   $('num-inp').value=''; $('num-inp').disabled=false; $('btn-submit').disabled=false;
   $('num-hint').innerHTML='Range: −1,000,000,000 to +1,000,000,000 · up to 2 decimal places.<br>Your number is <strong>never transmitted</strong> — only random fragments are exchanged.';
   $('result-wrap').style.display='none';
-  $('num-card').style.display='none';
-  $('num-card').style.opacity=''; $('num-card').style.pointerEvents='';
-  setBanner(null); renderMembers();
-  if (S.isHost) { $('host-card').style.display=''; updateLockBtn(); }
+  $('num-card').style.display=''; $('num-card').style.opacity=''; $('num-card').style.pointerEvents='';
+  setBanner('New round — enter your next secret number', 'info');
+  renderMembers();
+  if (S.isHost) { $('btn-edit-participants').style.display=''; }
   if (andBcast) { if(S.isHost) bcast({type:'reset'}); else toHost({type:'reset'}); }
+}
+
+/* ── unlock room for editing participants (host only) ── */
+function unlockForEditing() {
+  S.locked=false; S.lockedIds=[];
+  S.sharesIn={}; S.colSumsIn={}; S.resultShown=false;
+  Object.values(S.members).forEach(m => m.submitted=false);
+  $('num-inp').value=''; $('num-inp').disabled=false; $('btn-submit').disabled=false;
+  $('result-wrap').style.display='none';
+  $('num-card').style.display='none'; $('num-card').style.opacity=''; $('num-card').style.pointerEvents='';
+  $('host-card').style.display='';
+  $('btn-edit-participants').style.display='none';
+  setBanner('Editing participants — add or remove, then lock again', 'info');
+  bcast({type:'unlock'});
+  renderMembers(); updateLockBtn();
 }
 
 /* ── start as host ── */
@@ -568,6 +597,7 @@ $('btn-copy').addEventListener('click', () => {
   });
 });
 $('btn-reset').addEventListener('click', () => doReset(true));
+$('btn-edit-participants').addEventListener('click', unlockForEditing);
 
 /* ── theme ── */
 const htmlEl = document.documentElement;

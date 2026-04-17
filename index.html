@@ -205,7 +205,6 @@
  * TWO-ROUND ADDITIVE SECRET SHARING — STAR TOPOLOGY
  * ==================================================
  * SCALE = 100  →  2 decimal places. Max |scaled| = 1e11 << MAX_SAFE_INTEGER (9e15).
- * RAND_RANGE = 1e11  →  safe for up to ~20 participants.
  *
  * Round 1: participant i splits value into N integer shares summing to round(value*100).
  *          Keeps own share locally; sends one share to each other peer via host relay.
@@ -225,7 +224,6 @@
  */
 
 const SCALE      = 100;
-const RAND_RANGE = 1e11;
 
 /* ── helpers ── */
 const $ = id => document.getElementById(id);
@@ -255,7 +253,11 @@ function setBanner(txt, cls) {
 function makeShares(value, lockedIds, myId) {
   const scaled   = Math.round(value * SCALE);
   const others   = lockedIds.filter(id => id !== myId);
-  const randoms  = others.map(() => Math.floor(Math.random()*(2*RAND_RANGE+1)) - RAND_RANGE);
+  const randoms  = others.map(() => {
+    const buf = new Uint32Array(1);
+    crypto.getRandomValues(buf);
+    return (buf[0] & 0x7FFFFFFF) - 0x40000000;
+  });
   const ownShare = scaled - randoms.reduce((a,b) => a+b, 0);
   const shares   = { [myId]: ownShare };
   others.forEach((id,i) => shares[id] = randoms[i]);

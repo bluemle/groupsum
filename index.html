@@ -856,21 +856,17 @@ applyTheme();
 $('theme-btn').addEventListener('click', () => { theme=theme==='dark'?'light':'dark'; applyTheme(); });
 
 /* ── hash-based invite link ── */
-(function checkHash() {
-  const rid = location.hash.replace('#', '').toUpperCase().trim();
+function applyHashRid() {
+  const rid = location.hash.replace('#','').split(':')[0].toUpperCase().trim();
   if (!rid) return;
-  // Pre-fill room ID and scroll join card into view
   $('join-rid').value = rid;
   $('join-name').focus();
-  // Collapse the "Create a room" card visually to make join more prominent
   const createCard = $('s-welcome').querySelector('.card');
   createCard.style.opacity = '.45';
   createCard.style.pointerEvents = 'none';
   $('join-name').scrollIntoView({ behavior: 'smooth', block: 'center' });
-})();
-
+}
 applyHashRid();
-// Also react when user manually edits the hash while on the welcome screen
 window.addEventListener('hashchange', () => {
   if ($('s-welcome').classList.contains('active')) applyHashRid();
 });

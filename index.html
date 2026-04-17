@@ -816,8 +816,50 @@ function startGuest(name, rid) {
     showScreen('s-welcome');
   });
 }
+
+/* ── button wiring ── */
+$('btn-create').addEventListener('click', () => startHost($('host-name').value.trim() || 'Host'));
+$('host-name').addEventListener('keydown', e => { if (e.key==='Enter') $('btn-create').click(); });
+$('btn-join').addEventListener('click', () => {
+  const rid  = $('join-rid').value.trim().toUpperCase();
+  const name = $('join-name').value.trim() || 'Guest';
+  if (!rid) { $('join-err').textContent='Please enter a Room ID.'; $('join-err').style.display=''; return; }
+  $('join-err').style.display='none';
+  startGuest(name, rid);
+});
+$('join-rid').addEventListener('input',   e => e.target.value = e.target.value.toUpperCase());
+$('join-rid').addEventListener('keydown', e => { if (e.key==='Enter') $('btn-join').click(); });
+$('join-name').addEventListener('keydown',e => { if (e.key==='Enter') $('btn-join').click(); });
+$('btn-lock').addEventListener('click', lockRoom);
+$('btn-submit').addEventListener('click', submitNumber);
+$('num-inp').addEventListener('keydown', e => { if (e.key==='Enter') submitNumber(); });
+$('btn-reset').addEventListener('click', () => doReset(true));
+$('btn-edit-participants').addEventListener('click', unlockForEditing);
+$('btn-copy').addEventListener('click', () => {
+  navigator.clipboard.writeText($('rid-display').textContent).then(() => {
+    $('btn-copy').textContent='Copied!';
+    setTimeout(() => $('btn-copy').textContent='Copy', 2000);
+  });
+});
+$('btn-copy-link').addEventListener('click', () => {
+  navigator.clipboard.writeText($('share-link-inp').value).then(() => {
+    $('btn-copy-link').textContent='Copied!';
+    setTimeout(() => $('btn-copy-link').textContent='Copy link', 2000);
+  });
+});
+
+/* ── hash-based invite ── */
+function applyHashRid() {
+  const rid = location.hash.replace('#','').toUpperCase().trim();
+  if (!rid) return;
+  $('join-rid').value = rid;
+  $('join-name').focus();
+  const createCard = $('s-welcome').querySelector('.card');
+  createCard.style.opacity = '.45';
+  createCard.style.pointerEvents = 'none';
+  $('join-name').scrollIntoView({ behavior:'smooth', block:'center' });
+}
 applyHashRid();
-// Also react when user manually edits the hash while on the welcome screen
 window.addEventListener('hashchange', () => {
   if ($('s-welcome').classList.contains('active')) applyHashRid();
 });

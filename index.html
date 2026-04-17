@@ -750,21 +750,27 @@ function reconnectToNewHost(gen) {
 /* ── probe host generations to find active host ── */
 function probeAndJoin(rid, name, peer, gen) {
   const targetId = hostPeerIdForGen(rid, gen);
+  setConn('Connecting…', '');
   const conn = peer.connect(targetId, {reliable:true});
   let opened = false;
+  let advanced = false; // prevent double-advance from both timeout and error
 
-  const timeout = setTimeout(() => {
-    if (!opened && gen < 20) {
+  function tryNext() {
+    if (advanced) return; advanced = true;
+    if (gen < 20) {
       probeAndJoin(rid, name, peer, gen + 1);
-    } else if (!opened) {
+    } else {
       setConn('Room not found', 'err');
       $('join-err').textContent = 'Room not found. Check the Room ID.';
       $('join-err').style.display = '';
       showScreen('s-welcome'); try { peer.destroy(); } catch(e){}
     }
-  }, 2000);
+  }
+
+  const timeout = setTimeout(() => { if (!opened) tryNext(); }, 2500);
 
   conn.on('open', () => {
+    if (advanced) return; // another gen already took over
     opened = true; clearTimeout(timeout);
     S.hostPeerId = targetId; S.hostConn = conn; S.hostGen = gen;
     setConn('Connected', 'ok'); $('role-lbl').textContent = 'Guest';
@@ -787,17 +793,7 @@ function probeAndJoin(rid, name, peer, gen) {
     attemptHostPromotion();
   });
 
-  conn.on('error', () => {
-    clearTimeout(timeout);
-    if (!opened && gen < 20) {
-      probeAndJoin(rid, name, peer, gen + 1);
-    } else if (!opened) {
-      setConn('Room not found', 'err');
-      $('join-err').textContent = 'Room not found. Check the Room ID.';
-      $('join-err').style.display = '';
-      showScreen('s-welcome'); try { peer.destroy(); } catch(e){}
-    }
-  });
+  conn.on('error', () => { clearTimeout(timeout); if (!opened) tryNext(); });
 }
 
 /* ── start as guest ── */
@@ -810,8 +806,10 @@ function startGuest(name, rid) {
     S.myId=myId;
     probeAndJoin(rid, name, peer, 0);
   });
-  peer.on('error', () => {
-    $('join-err').textContent='Connection error. Please try again.';
+  peer.on('error', e => {
+    // Only abort for fatal peer-creation errors, not conn-level errors
+    if (e.type === 'peer-unavailable') return; // handled by probeAndJoin
+    $('join-err').textContent='Could not connect. Please try again.';
     $('join-err').style.display='';
     showScreen('s-welcome');
   });
@@ -870,9 +868,6 @@ $('theme-btn').addEventListener('click', () => { theme=theme==='dark'?'light':'d
   createCard.style.pointerEvents = 'none';
   $('join-name').scrollIntoView({ behavior: 'smooth', block: 'center' });
 })();
-</script>
-</body>
-</html
 
 applyHashRid();
 // Also react when user manually edits the hash while on the welcome screen

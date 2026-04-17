@@ -818,53 +818,11 @@ function startGuest(name, rid) {
 }
 /* ── wire up buttons ── */
 $('btn-create').addEventListener('click', () => {
-  const name = $('create-name').value.trim();
-  if (!name) { $('create-err').textContent='Please enter your name.'; $('create-err').style.display=''; return; }
-  $('create-err').style.display='none';
+  const name = $('host-name').value.trim();
+  if (!name) return;
   startHost(name);
 });
-$('create-name').addEventListener('keydown', e => { if(e.key==='Enter') $('btn-create').click(); });
-
-$('btn-join').addEventListener('click', () => {
-  const name = $('join-name').value.trim();
-  const rid  = $('join-rid').value.trim().toUpperCase();
-  $('join-err').style.display='none';
-  if (!name) { $('join-err').textContent='Please enter your name.'; $('join-err').style.display=''; return; }
-  if (!rid)  { $('join-err').textContent='Please enter a Room ID.'; $('join-err').style.display=''; return; }
-  startGuest(name, rid);
-});
-$('join-name').addEventListener('keydown', e => { if(e.key==='Enter') $('btn-join').click(); });
-$('join-rid').addEventListener('keydown',  e => { if(e.key==='Enter') $('btn-join').click(); });
-
-$('btn-lock').addEventListener('click', lockRoom);
-$('btn-reset').addEventListener('click', () => doReset(true));
-$('btn-edit-participants').addEventListener('click', unlockForEditing);
-$('btn-copy').addEventListener('click', () => {
-  navigator.clipboard.writeText($('rid-display').textContent).then(() => {
-    $('btn-copy').textContent='Copied!';
-    setTimeout(() => $('btn-copy').innerHTML='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy', 2000);
-  });
-});
-$('btn-copy-link').addEventListener('click', () => {
-  navigator.clipboard.writeText($('share-link-inp').value).then(() => {
-    $('btn-copy-link').textContent='Copied!';
-    setTimeout(() => $('btn-copy-link').textContent='Copy link', 2000);
-  });
-});
-$('btn-submit').addEventListener('click', submitNumber);
-$('num-inp').addEventListener('keydown', e => { if(e.key==='Enter') $('btn-submit').click(); });
-
-applyHashRid();
-// Also react when user manually edits the hash while on the welcome screen
-window.addEventListener('hashchange', () => {
-  if ($('s-welcome').classList.contains('active')) /* ── wire up buttons ── */
-$('btn-create').addEventListener('click', () => {
-  const name = $('create-name').value.trim();
-  if (!name) { $('create-err').textContent='Please enter your name.'; $('create-err').style.display=''; return; }
-  $('create-err').style.display='none';
-  startHost(name);
-});
-$('create-name').addEventListener('keydown', e => { if(e.key==='Enter') $('btn-create').click(); });
+$('host-name').addEventListener('keydown', e => { if(e.key==='Enter') $('btn-create').click(); });
 
 $('btn-join').addEventListener('click', () => {
   const name = $('join-name').value.trim();

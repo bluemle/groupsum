@@ -297,6 +297,7 @@ const S = {
 
   heartbeatTimer:null,  // host: interval sending pings
   hostWatchdog:null,    // guest: timeout detecting host gone
+  hostPeerId:null,      // actual PeerJS peer ID of current host (may differ from roomId)
 };
 
 /* ── render ── */
@@ -599,7 +600,7 @@ function startHost(name) {
   showScreen('s-room'); setConn('Starting…');
   const peer = new Peer(rid, {debug:0}); S.peer=peer;
   peer.on('open', id => {
-    S.myId=id;
+    S.myId=id; S.hostPeerId=id;
     S.members[id]={ name, submitted:false };
     setConn('Room open · waiting for guests','ok');
     $('rid-display').textContent=rid;
@@ -632,21 +633,12 @@ function startHost(name) {
 }
 
 /* ── promote guest to host after host disconnect ── */
-/* ── host election after host disconnect ── *
- * Strategy: no peer ID reuse (PeerJS server holds IDs too long).
- * Instead, each guest elects the new host by sorted myId — the 
- * lexicographically smallest guest ID among remaining members becomes host.
- * The elected guest creates a NEW peer (any random ID) and broadcasts
- * a 'new_host' message through PeerJS presence. All others reconnect to it.
- * Since there's no relay, guests connect to the elected ID directly.
- */
+/* ── host election after host disconnect ── */
 function electNewHost() {
-  // Collect known guest IDs (exclude old host ID = S.roomId)
   const candidates = Object.keys(S.members)
-    .filter(id => id !== S.roomId && S.members[id])
+    .filter(id => id !== S.hostPeerId && S.members[id])
     .sort();
-  if (!candidates.length) return null;
-  return candidates[0]; // lexicographically first = elected host
+  return candidates.length ? candidates[0] : null;
 }
 
 function attemptHostPromotion() {
@@ -654,38 +646,42 @@ function attemptHostPromotion() {
   if (!elected) { setConn('No participants left', 'err'); return; }
 
   if (elected === S.myId) {
-    // I am the elected host — become host with a new peer ID
     setConn('Becoming host…', '');
-    const newPeer = new Peer(undefined, {debug:0}); // random new ID, no conflict
-    newPeer.on('open', newId => {
+    const newPeer = new Peer(undefined, {debug:0});
+    newPeer.on('open', newPeerId => {
       if (S.peer) { try { S.peer.destroy(); } catch(e){} }
-      S.peer    = newPeer;
-      S.myId    = newId;
-      S.isHost  = true;
+      S.peer     = newPeer;
+      S.isHost   = true;
       S.hostConn = null;
       S.guestMap = {};
       S.locked   = false; S.lockedIds = [];
       S.sharesIn = {}; S.colSumsIn = {};
       S.resultShown = false;
-      if (S.hostWatchdog) { clearTimeout(S.hostWatchdog); S.hostWatchdog = null; }
+      if (S.hostWatchdog)   { clearTimeout(S.hostWatchdog);   S.hostWatchdog = null; }
 
-      // Update members: replace my old entry with new ID
-      const myEntry = S.members[elected] || { name: S.myName, submitted: false };
-      delete S.members[elected];
-      delete S.members[S.roomId]; // remove old host
-      S.members[newId] = { name: S.myName, submitted: false };
+      // Update hostPeerId — room ID stays the same
+      const oldHostId = S.hostPeerId;
+      S.hostPeerId = newPeerId;
+      // Keep myId as the elected guest id (used for member tracking)
+      // S.myId stays as elected (my old peer id) for member list consistency
+      // but we need to update it to newPeerId for messaging
+      const oldMyId = S.myId;
+      S.myId = newPeerId;
 
-      // New room ID = newId
-      S.roomId = newId;
+      // Fix members: remove old host entry, update my entry to new peer ID
+      delete S.members[oldHostId];
+      const myEntry = S.members[oldMyId] || { name: S.myName, submitted: false };
+      delete S.members[oldMyId];
+      S.members[newPeerId] = { name: S.myName, submitted: false };
 
-      // Full host UI
+      // UI — keep S.roomId (same 6-char code shown to users)
       $('num-inp').value=''; $('num-inp').disabled=false; $('btn-submit').disabled=false;
       $('result-wrap').style.display='none';
       $('num-card').style.display='none'; $('num-card').style.opacity=''; $('num-card').style.pointerEvents='';
       $('host-card').style.display='';
-      $('rid-display').textContent = newId;
-      history.replaceState(null, '', '#' + newId);
-      const inviteUrl = location.href.split('#')[0] + '#' + newId;
+      $('rid-display').textContent = S.roomId;
+      history.replaceState(null, '', '#' + S.roomId);
+      const inviteUrl = location.href.split('#')[0] + '#' + S.roomId;
       $('share-link-inp').value = inviteUrl;
       $('share-link-box').style.display = '';
       $('btn-reset').style.display = '';
@@ -693,15 +689,15 @@ function attemptHostPromotion() {
       $('guest-waiting-nr').style.display = 'none';
       setConn('You are now the host', 'ok');
       $('role-lbl').textContent = 'Host (promoted)';
-      setBanner('You became the host — a new Room ID has been created. Share the new link!', 'info');
+      setBanner('You became the host — same Room ID, share the same link!', 'info');
 
-      // Start heartbeat for new guests
       if (S.heartbeatTimer) clearInterval(S.heartbeatTimer);
       S.heartbeatTimer = setInterval(() => { if (S.isHost) bcast({type:'ping'}); }, 3000);
 
       renderMembers(); updateLockBtn();
 
-      // Accept incoming connections
+      // Tell other guests the new host peer ID so they can reconnect
+      // They will try connecting to newPeerId
       newPeer.on('connection', conn => {
         const pid = conn.peer; S.guestMap[pid] = {conn};
         conn.on('data',  msg => onHostMsg(msg, pid));
@@ -720,24 +716,27 @@ function attemptHostPromotion() {
     newPeer.on('error', () => setConn('Promotion failed', 'err'));
 
   } else {
-    // Someone else is elected — wait a moment then reconnect to them as guest
-    setConn(`Reconnecting to new host…`, '');
-    setTimeout(() => reconnectAsGuest(elected, S.myName), 3000);
+    // Elected is someone else — wait then reconnect to them
+    setConn('Reconnecting to new host…', '');
+    // elected is the new host's OLD myId which they'll use as their new peer id's base
+    // We don't know their new peer ID yet — try after delay
+    // Store elected so reconnect knows who to try
+    S._pendingHostId = elected;
+    setTimeout(() => reconnectAsGuest(elected, S.myName), 3500);
   }
 }
 
-function reconnectAsGuest(newHostId, name) {
+function reconnectAsGuest(newHostPeerId, name) {
   if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
   const peer = new Peer(undefined, {debug:0}); S.peer = peer;
   peer.on('open', myId => {
     S.myId = myId; S.isHost = false;
-    S.roomId = newHostId;
-    const conn = peer.connect(newHostId, {reliable:true}); S.hostConn = conn;
+    S.hostPeerId = newHostPeerId;
+    const conn = peer.connect(newHostPeerId, {reliable:true}); S.hostConn = conn;
     conn.on('open', () => {
       setConn('Reconnected', 'ok');
       $('role-lbl').textContent = 'Guest';
       conn.send({type:'hello', name});
-      // Restart watchdog
       if (S.hostWatchdog) clearTimeout(S.hostWatchdog);
       S.hostWatchdog = setTimeout(() => {
         setConn('Host disconnected — trying to become host…', 'err');
@@ -758,6 +757,7 @@ function reconnectAsGuest(newHostId, name) {
 
 /* ── start as guest ── */
 /* ── start as guest ── */
+/* ── start as guest ── */
 function startGuest(name, rid) {
   S.myName=name; S.isHost=false; S.roomId=rid;
   history.replaceState(null, '', location.pathname); // clear hash after joining
@@ -765,6 +765,7 @@ function startGuest(name, rid) {
   const peer = new Peer(undefined, {debug:0}); S.peer=peer;
   peer.on('open', myId => {
     S.myId=myId;
+    S.hostPeerId=rid;
     const conn=peer.connect(rid,{reliable:true}); S.hostConn=conn;
     conn.on('open',  ()  => {
       setConn('Connected','ok');
@@ -843,18 +844,21 @@ applyTheme();
 $('theme-btn').addEventListener('click', () => { theme=theme==='dark'?'light':'dark'; applyTheme(); });
 
 /* ── hash-based invite link ── */
-(function checkHash() {
+function applyHashRid() {
   const rid = location.hash.replace('#', '').toUpperCase().trim();
   if (!rid) return;
-  // Pre-fill room ID and scroll join card into view
   $('join-rid').value = rid;
   $('join-name').focus();
-  // Collapse the "Create a room" card visually to make join more prominent
   const createCard = $('s-welcome').querySelector('.card');
   createCard.style.opacity = '.45';
   createCard.style.pointerEvents = 'none';
   $('join-name').scrollIntoView({ behavior: 'smooth', block: 'center' });
-})();
+}
+applyHashRid();
+// Also react when user manually edits the hash while on the welcome screen
+window.addEventListener('hashchange', () => {
+  if ($('s-welcome').classList.contains('active')) applyHashRid();
+});
 </script>
 </body>
 </html>

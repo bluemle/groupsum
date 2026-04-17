@@ -646,93 +646,104 @@ function attemptHostPromotion() {
   if (!elected) { setConn('No participants left', 'err'); return; }
 
   if (elected === S.myId) {
-    setConn('Becoming host…', '');
-    const newPeer = new Peer(undefined, {debug:0});
-    newPeer.on('open', newPeerId => {
-      if (S.peer) { try { S.peer.destroy(); } catch(e){} }
-      S.peer     = newPeer;
-      S.isHost   = true;
-      S.hostConn = null;
-      S.guestMap = {};
-      S.locked   = false; S.lockedIds = [];
-      S.sharesIn = {}; S.colSumsIn = {};
-      S.resultShown = false;
-      if (S.hostWatchdog)   { clearTimeout(S.hostWatchdog);   S.hostWatchdog = null; }
-
-      // Update hostPeerId — room ID stays the same
-      const oldHostId = S.hostPeerId;
-      S.hostPeerId = newPeerId;
-      // Keep myId as the elected guest id (used for member tracking)
-      // S.myId stays as elected (my old peer id) for member list consistency
-      // but we need to update it to newPeerId for messaging
-      const oldMyId = S.myId;
-      S.myId = newPeerId;
-
-      // Fix members: remove old host entry, update my entry to new peer ID
-      delete S.members[oldHostId];
-      const myEntry = S.members[oldMyId] || { name: S.myName, submitted: false };
-      delete S.members[oldMyId];
-      S.members[newPeerId] = { name: S.myName, submitted: false };
-
-      // UI — keep S.roomId (same 6-char code shown to users)
-      $('num-inp').value=''; $('num-inp').disabled=false; $('btn-submit').disabled=false;
-      $('result-wrap').style.display='none';
-      $('num-card').style.display='none'; $('num-card').style.opacity=''; $('num-card').style.pointerEvents='';
-      $('host-card').style.display='';
-      $('rid-display').textContent = S.roomId;
-      history.replaceState(null, '', '#' + S.roomId);
-      const inviteUrl = location.href.split('#')[0] + '#' + S.roomId;
-      $('share-link-inp').value = inviteUrl;
-      $('share-link-box').style.display = '';
-      $('btn-reset').style.display = '';
-      $('btn-edit-participants').style.display = '';
-      $('guest-waiting-nr').style.display = 'none';
-      setConn('You are now the host', 'ok');
-      $('role-lbl').textContent = 'Host (promoted)';
-      setBanner('You became the host — same Room ID, share the same link!', 'info');
-
-      if (S.heartbeatTimer) clearInterval(S.heartbeatTimer);
-      S.heartbeatTimer = setInterval(() => { if (S.isHost) bcast({type:'ping'}); }, 3000);
-
-      renderMembers(); updateLockBtn();
-
-      // Tell other guests the new host peer ID so they can reconnect
-      // They will try connecting to newPeerId
-      newPeer.on('connection', conn => {
-        const pid = conn.peer; S.guestMap[pid] = {conn};
-        conn.on('data',  msg => onHostMsg(msg, pid));
-        conn.on('close', () => {
-          delete S.guestMap[pid];
-          if (!S.locked) { delete S.members[pid]; renderMembers(); updateLockBtn(); }
-        });
-        conn.on('open', () => {
-          const snap = Object.fromEntries(
-            Object.entries(S.members).map(([id,m]) => [id, {name:m.name, submitted:m.submitted}])
-          );
-          conn.send({type:'welcome', myId:pid, members:snap});
-        });
-      });
-    });
-    newPeer.on('error', () => setConn('Promotion failed', 'err'));
-
+    claimRoomId(S.roomId, S.myName, 0);
   } else {
-    // Elected is someone else — wait then reconnect to them
     setConn('Reconnecting to new host…', '');
-    // elected is the new host's OLD myId which they'll use as their new peer id's base
-    // We don't know their new peer ID yet — try after delay
-    // Store elected so reconnect knows who to try
-    S._pendingHostId = elected;
-    setTimeout(() => reconnectAsGuest(elected, S.myName), 3500);
+    setTimeout(() => reconnectAsGuest(S.roomId, S.myName), 4000);
   }
 }
 
-function reconnectAsGuest(newHostPeerId, name) {
+function claimRoomId(rid, name, attempt) {
+  const maxAttempts = 12;
+  const delay = 3000;
+  setConn(`Becoming host… (${attempt+1}/${maxAttempts})`, '');
+  const claimPeer = new Peer(rid, {debug:0});
+
+  claimPeer.on('open', peerId => {
+    // Successfully claimed the original room ID
+    if (S.peer && S.peer !== claimPeer) { try { S.peer.destroy(); } catch(e){} }
+    S.peer       = claimPeer;
+    S.myId       = peerId;          // peerId === rid
+    S.hostPeerId = peerId;
+    S.isHost     = true;
+    S.hostConn   = null;
+    S.guestMap   = {};
+    S.locked     = false; S.lockedIds = [];
+    S.sharesIn   = {}; S.colSumsIn = {};
+    S.resultShown = false;
+    if (S.hostWatchdog)   { clearTimeout(S.hostWatchdog);   S.hostWatchdog   = null; }
+    if (S.heartbeatTimer) { clearInterval(S.heartbeatTimer); S.heartbeatTimer = null; }
+
+    // Fix members: remove old host entry, replace my entry with new peerId
+    const oldMyId = Object.keys(S.members).find(id => S.members[id]?.name === name && id !== rid);
+    if (oldMyId) {
+      delete S.members[oldMyId];
+    }
+    delete S.members[rid]; // remove old host if present
+    S.members[peerId] = { name, submitted: false };
+
+    // Full host UI — same room ID
+    $('num-inp').value=''; $('num-inp').disabled=false; $('btn-submit').disabled=false;
+    $('result-wrap').style.display='none';
+    $('num-card').style.display='none'; $('num-card').style.opacity=''; $('num-card').style.pointerEvents='';
+    $('host-card').style.display='';
+    $('rid-display').textContent = rid;
+    history.replaceState(null, '', '#' + rid);
+    const inviteUrl = location.href.split('#')[0] + '#' + rid;
+    $('share-link-inp').value = inviteUrl;
+    $('share-link-box').style.display = '';
+    $('btn-reset').style.display = '';
+    $('btn-edit-participants').style.display = '';
+    $('guest-waiting-nr').style.display = 'none';
+    setConn('You are now the host', 'ok');
+    $('role-lbl').textContent = 'Host (promoted)';
+    setBanner('You became the host — same Room ID and invite link!', 'info');
+
+    // Start heartbeat
+    S.heartbeatTimer = setInterval(() => { if (S.isHost) bcast({type:'ping'}); }, 3000);
+
+    renderMembers(); updateLockBtn();
+
+    // Accept connections (including rejoining guests + new joiners)
+    claimPeer.on('connection', conn => {
+      const pid = conn.peer; S.guestMap[pid] = {conn};
+      conn.on('data',  msg => onHostMsg(msg, pid));
+      conn.on('close', () => {
+        delete S.guestMap[pid];
+        if (!S.locked) { delete S.members[pid]; renderMembers(); updateLockBtn(); }
+      });
+      conn.on('open', () => {
+        const snap = Object.fromEntries(
+          Object.entries(S.members).map(([id,m]) => [id, {name:m.name, submitted:m.submitted}])
+        );
+        conn.send({type:'welcome', myId:pid, members:snap});
+      });
+    });
+  });
+
+  claimPeer.on('error', e => {
+    claimPeer.destroy();
+    if (e.type === 'unavailable-id') {
+      if (attempt + 1 < maxAttempts) {
+        setTimeout(() => claimRoomId(rid, name, attempt + 1), delay);
+      } else {
+        // Give up claiming — reconnect as guest (someone else got it)
+        setConn('Reconnecting as guest…', '');
+        setTimeout(() => reconnectAsGuest(rid, name), 1000);
+      }
+    } else {
+      setConn('Could not become host', 'err');
+    }
+  });
+}
+
+function reconnectAsGuest(hostRoomId, name) {
   if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
   const peer = new Peer(undefined, {debug:0}); S.peer = peer;
   peer.on('open', myId => {
     S.myId = myId; S.isHost = false;
-    S.hostPeerId = newHostPeerId;
-    const conn = peer.connect(newHostPeerId, {reliable:true}); S.hostConn = conn;
+    S.roomId = hostRoomId; S.hostPeerId = hostRoomId;
+    const conn = peer.connect(hostRoomId, {reliable:true}); S.hostConn = conn;
     conn.on('open', () => {
       setConn('Reconnected', 'ok');
       $('role-lbl').textContent = 'Guest';
@@ -752,9 +763,10 @@ function reconnectAsGuest(newHostPeerId, name) {
     });
     conn.on('error', () => setConn('Could not reconnect', 'err'));
   });
-  peer.on('error', () => setConn('Could not reconnect to new host', 'err'));
+  peer.on('error', () => setConn('Could not reconnect', 'err'));
 }
 
+/* ── start as guest ── */
 /* ── start as guest ── */
 /* ── start as guest ── */
 /* ── start as guest ── */

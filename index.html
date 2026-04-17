@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>GroupSum</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300..700&family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <style>
+    :root,[data-theme="light"]{
+      --bg:#f7f6f2;--surface:#f9f8f5;--surface2:#fbfbf9;--surfoff:#f0ede8;
+      --divider:#dcd9d5;--text:#28251d;--muted:#7a7974;--faint:#bab9b4;--inv:#f9f8f4;
+      --primary:#01696f;--primary-h:#0c4e54;--primary-hl:#cedcd8;
+      --success:#437a22;--success-hl:#d4dfcc;
+      --error:#a12c7b;--error-hl:#e0ced7;
+      --sh-md:0 4px 12px oklch(0.2 0.01 80/.08);--sh-lg:0 12px 32px oklch(0.2 0.01 80/.12);
+      --tr:180ms cubic-bezier(0.16,1,0.3,1);
+      --r-sm:.375rem;--r-md:.5rem;--r-lg:.75rem;--r-2xl:1.5rem;--r-full:9999px;
+    }
+    [data-theme="dark"]{
+      --bg:#0f0e0d;--surface:#171614;--surface2:#1e1d1b;--surfoff:#242321;
+      --divider:#2a2927;--text:#e8e6e3;--muted:#8a8884;--faint:#555350;--inv:#1a1917;
+      --primary:#4f98a3;--primary-h:#6db8c4;--primary-hl:#1e3538;
+      --success:#6daa45;--success-hl:#233318;
+      --error:#d163a7;--error-hl:#3a1f30;
+      --sh-md:0 4px 12px oklch(0 0 0/.4);--sh-lg:0 12px 32px oklch(0 0 0/.5);
+    }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+    body{min-height:100dvh;font-family:'Inter',sans-serif;font-size:1rem;color:var(--text);background:var(--bg);display:flex;flex-direction:column;align-items:center;padding:1.5rem 1rem 3rem;transition:background var(--tr),color var(--tr)}
+    input,button{font:inherit;color:inherit}
+    button{cursor:pointer;background:none;border:none}
+    :focus-visible{outline:2px solid var(--primary);outline-offset:3px;border-radius:var(--r-sm)}
+    @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+    .app{width:100%;max-width:480px;display:flex;flex-direction:column;gap:1.25rem}
+    .hdr{display:flex;align-items:center;justify-content:space-between;padding:.5rem 0 .25rem}
+    .logo{display:flex;align-items:center;gap:.625rem}
+    .logo svg{width:32px;height:32px;color:var(--primary)}
+    .logo-text{font-family:'Space Grotesk',sans-serif;font-size:1.2rem;font-weight:700;letter-spacing:-.02em}
+    .theme-btn{width:36px;height:36px;border-radius:var(--r-full);display:flex;align-items:center;justify-content:center;color:var(--muted);transition:color var(--tr),background var(--tr)}
+    .theme-btn:hover{color:var(--text);background:var(--surfoff)}
+    .card{background:var(--surface);border:1px solid oklch(from var(--text) l c h/.09);border-radius:var(--r-2xl);padding:1.5rem;box-shadow:var(--sh-md)}
+    .card-title{font-family:'Space Grotesk',sans-serif;font-size:1rem;font-weight:600;margin-bottom:1rem;display:flex;align-items:center;gap:.5rem}
+    .dot{width:8px;height:8px;border-radius:var(--r-full);background:var(--primary);flex-shrink:0}
+    .badge{display:inline-flex;align-items:center;gap:.375rem;font-size:.75rem;font-weight:500;padding:.25rem .625rem;border-radius:var(--r-full);background:var(--surfoff);color:var(--muted);transition:background var(--tr),color var(--tr)}
+    .badge.ok{background:var(--success-hl);color:var(--success)}
+    .badge.err{background:var(--error-hl);color:var(--error)}
+    .pulse{width:6px;height:6px;border-radius:var(--r-full);background:currentColor;animation:pulse 1.8s ease-in-out infinite}
+    @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.85)}}
+    .lbl{font-size:.8125rem;font-weight:500;color:var(--muted);margin-bottom:.375rem;display:block}
+    .irow{display:flex;gap:.5rem}
+    .inp{flex:1;height:48px;padding:0 1rem;background:var(--surface2);border:1px solid oklch(from var(--text) l c h/.12);border-radius:var(--r-lg);font-size:1.0625rem;font-weight:500;color:var(--text);transition:border-color var(--tr),box-shadow var(--tr)}
+    .inp:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px oklch(from var(--primary) l c h/.15)}
+    .inp::placeholder{color:var(--faint)}
+    .inp:disabled{opacity:.45;cursor:not-allowed}
+    .inp.big{font-size:1.375rem;font-weight:700;font-family:'Space Grotesk',sans-serif}
+    .btn{height:48px;padding:0 1.25rem;border-radius:var(--r-lg);font-size:.9375rem;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:.5rem;transition:background var(--tr),color var(--tr),transform var(--tr);white-space:nowrap;min-width:48px}
+    .btn:active{transform:scale(.97)}
+    .btn.primary{background:var(--primary);color:var(--inv)}
+    .btn.primary:hover{background:var(--primary-h)}
+    .btn.primary:disabled{opacity:.4;cursor:not-allowed;transform:none}
+    .btn.ghost{background:transparent;color:var(--muted);border:1px solid oklch(from var(--text) l c h/.12)}
+    .btn.ghost:hover{background:var(--surfoff);color:var(--text)}
+    .btn.full{width:100%}
+    .btn.sm{height:32px;padding:0 .75rem;font-size:.75rem;border-radius:var(--r-md)}
+    .plist{display:flex;flex-direction:column;gap:.5rem;max-height:280px;overflow-y:auto;padding-right:.25rem}
+    .plist::-webkit-scrollbar{width:4px}
+    .plist::-webkit-scrollbar-thumb{background:var(--divider);border-radius:var(--r-full)}
+    .pitem{display:flex;align-items:center;justify-content:space-between;padding:.75rem 1rem;background:var(--surface2);border:1px solid oklch(from var(--text) l c h/.07);border-radius:var(--r-lg);animation:si .2s ease-out}
+    @keyframes si{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+    .pleft{display:flex;align-items:center;gap:.625rem}
+    .avatar{width:32px;height:32px;border-radius:var(--r-full);background:var(--primary-hl);color:var(--primary);display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;font-size:.75rem;font-weight:700;flex-shrink:0}
+    .pname{font-size:.9375rem;font-weight:500}
+    .pyou{font-size:.6875rem;color:var(--faint);margin-left:.25rem}
+    .pstatus{display:flex;align-items:center;gap:.375rem;font-size:.8125rem;color:var(--muted)}
+    .pstatus.done{color:var(--success)}
+    .dots span{display:inline-block;width:4px;height:4px;background:var(--faint);border-radius:var(--r-full);margin:0 1px;animation:blink 1.4s ease-in-out infinite}
+    .dots span:nth-child(2){animation-delay:.2s}.dots span:nth-child(3){animation-delay:.4s}
+    @keyframes blink{0%,80%,100%{opacity:.2}40%{opacity:1}}
+    .empty-p{padding:1.25rem;text-align:center;color:var(--faint);font-size:.875rem}
+    .banner{display:flex;align-items:center;gap:.625rem;padding:.75rem 1rem;border-radius:var(--r-lg);font-size:.8125rem;font-weight:500;border:1px solid transparent}
+    .banner.info{background:var(--primary-hl);color:var(--primary);border-color:oklch(from var(--primary) l c h/.2)}
+    .banner.ok{background:var(--success-hl);color:var(--success);border-color:oklch(from var(--success) l c h/.2)}
+    .roombox{display:flex;align-items:center;justify-content:space-between;padding:.875rem 1rem;background:var(--surfoff);border:1px solid oklch(from var(--text) l c h/.1);border-radius:var(--r-lg);gap:.75rem}
+    .rid-lbl{font-size:.75rem;font-weight:500;color:var(--faint);text-transform:uppercase;letter-spacing:.07em}
+    .rid-code{font-family:'Space Grotesk',sans-serif;font-size:1.25rem;font-weight:700;letter-spacing:.08em}
+    .result{background:linear-gradient(135deg,oklch(from var(--primary) l c h/.12),oklch(from var(--primary) l c h/.04));border:1px solid oklch(from var(--primary) l c h/.25);border-radius:var(--r-2xl);padding:2rem 1.5rem;text-align:center;box-shadow:var(--sh-lg);animation:pi .35s cubic-bezier(0.16,1,0.3,1)}
+    @keyframes pi{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}
+    .result-lbl{font-size:.8125rem;font-weight:500;color:var(--primary);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.5rem}
+    .result-num{font-family:'Space Grotesk',sans-serif;font-size:clamp(2.5rem,10vw,4rem);font-weight:700;letter-spacing:-.03em;line-height:1;margin-bottom:.625rem}
+    .result-sub{font-size:.875rem;color:var(--muted)}
+    .info{font-size:.8125rem;color:var(--muted);line-height:1.55}
+    .info strong{color:var(--text)}
+    .screen{display:none}.screen.active{display:flex;flex-direction:column;gap:1.25rem}
+    .center{display:flex;justify-content:center}
+  </style>
+</head>
+<body>
+<div class="app">
+  <header class="hdr">
+    <div class="logo">
+      <svg viewBox="0 0 32 32" fill="none" aria-label="GroupSum">
+        <rect x="2" y="8" width="12" height="12" rx="3" fill="currentColor" opacity=".85"/>
+        <rect x="18" y="8" width="12" height="12" rx="3" fill="currentColor" opacity=".45"/>
+        <rect x="10" y="20" width="12" height="8" rx="3" fill="currentColor" opacity=".65"/>
+        <path d="M14 14h4M16 12v4" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      <span class="logo-text">GroupSum</span>
+    </div>
+    <button class="theme-btn" id="theme-btn" aria-label="Toggle theme"></button>
+  </header>
+
+  <!-- WELCOME -->
+  <div id="s-welcome" class="screen active">
+    <div class="card">
+      <div class="card-title"><div class="dot"></div>Create a room</div>
+      <p class="info" style="margin-bottom:1rem">Numbers stay <strong>completely private</strong> — only the final sum is revealed, using cryptographic secret sharing.</p>
+      <label class="lbl" for="host-name">Your name</label>
+      <input class="inp" id="host-name" type="text" placeholder="e.g. Alice" maxlength="20" autocomplete="off"/>
+      <button class="btn primary full" id="btn-create" style="margin-top:.875rem">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+        Create Room
+      </button>
+    </div>
+    <div class="card">
+      <div class="card-title"><div class="dot"></div>Join a room</div>
+      <label class="lbl" for="join-name">Your name</label>
+      <input class="inp" id="join-name" type="text" placeholder="e.g. Bob" maxlength="20" autocomplete="off" style="margin-bottom:.625rem"/>
+      <label class="lbl" for="join-rid">Room ID</label>
+      <div class="irow">
+        <input class="inp" id="join-rid" type="text" placeholder="e.g. ABC123" maxlength="10" autocomplete="off" style="text-transform:uppercase;letter-spacing:.08em"/>
+        <button class="btn primary" id="btn-join">Join</button>
+      </div>
+      <div id="join-err" style="margin-top:.5rem;font-size:.8125rem;color:var(--error);display:none"></div>
+    </div>
+  </div>
+
+  <!-- ROOM -->
+  <div id="s-room" class="screen">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem">
+      <div class="badge" id="conn-badge"><div class="pulse"></div><span id="conn-txt">Connecting…</span></div>
+      <span style="font-size:.75rem;color:var(--faint)" id="role-lbl"></span>
+    </div>
+
+    <div class="card" id="host-card" style="display:none">
+      <div class="card-title"><div class="dot"></div>Share this Room ID</div>
+      <div class="roombox">
+        <div><div class="rid-lbl">Room ID</div><div class="rid-code" id="rid-display">—</div></div>
+        <button class="btn primary sm" id="btn-copy">Copy</button>
+      </div>
+      <p class="info" style="margin-top:.875rem">Once everyone has joined, click <strong>Lock &amp; Start</strong>. No one can join after that.</p>
+      <button class="btn primary full" id="btn-lock" style="margin-top:1rem" disabled>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <span id="lock-label">Waiting for participants…</span>
+      </button>
+    </div>
+
+    <div class="banner info" id="phase-banner" style="display:none"></div>
+
+    <div class="card">
+      <div class="card-title"><div class="dot"></div><span id="p-title">Participants (0)</span></div>
+      <div class="plist" id="plist"><div class="empty-p">Waiting for participants…</div></div>
+    </div>
+
+    <div class="card" id="num-card" style="display:none">
+      <div class="card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2.5" style="flex-shrink:0"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        Your secret number
+      </div>
+      <div class="irow">
+        <input class="inp big" id="num-inp" type="number" step="0.01" min="-1000000000" max="1000000000" placeholder="0.00"/>
+        <button class="btn primary" id="btn-submit">Submit</button>
+      </div>
+      <p class="info" style="margin-top:.75rem" id="num-hint">
+        Range: −1,000,000,000 to +1,000,000,000 · up to 2 decimal places.<br>
+        Your number is <strong>never transmitted</strong> — only random fragments are exchanged.
+      </p>
+    </div>
+
+    <div id="result-wrap" style="display:none">
+      <div class="result">
+        <div class="result-lbl">Total Sum</div>
+        <div class="result-num" id="result-num">0</div>
+        <div class="result-sub" id="result-sub"></div>
+        <div style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid oklch(from var(--primary) l c h/.2)">
+          <div style="font-size:.75rem;font-weight:500;color:var(--primary);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.375rem">Average</div>
+          <div id="result-avg" style="font-family:'Space Grotesk',sans-serif;font-size:1.75rem;font-weight:700;letter-spacing:-.02em;color:var(--text)">0</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="center" style="margin-top:.5rem">
+      <button class="btn ghost" id="btn-reset">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.6"/></svg>
+        New round
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+/*
+ * TWO-ROUND ADDITIVE SECRET SHARING — STAR TOPOLOGY
+ * ==================================================
+ * SCALE = 100  →  2 decimal places. Max |scaled| = 1e11 << MAX_SAFE_INTEGER (9e15).
+ * RAND_RANGE = 1e11  →  safe for up to ~20 participants.
+ *
+ * Round 1: participant i splits value into N integer shares summing to round(value*100).
+ *          Keeps own share locally; sends one share to each other peer via host relay.
+ *
+ * Round 2: each participant sums their received column → sends colSum to host.
+ *          host: globalSum = sum(all colSums) / 100  =  true arithmetic total.
+ *
+ * BUG-FIX INVARIANTS (fixes the wrong-sum race condition):
+ *  1. S.lockedIds  — sorted array FROZEN at lock time. Used for all math + completion.
+ *                    Never mutated after locking, even if a peer disconnects.
+ *  2. S.sharesIn   — plain object keyed by senderId → automatic deduplication.
+ *  3. S.colSumsIn  — plain object keyed by senderId → automatic deduplication.
+ *  4. Completion:  Object.keys(S.sharesIn).length  vs  S.lockedIds.length
+ *                  Object.keys(S.colSumsIn).length vs  S.lockedIds.length
+ *                  (never uses live S.members which shrinks on disconnect)
+ *  5. Messages from peers not in S.lockedIds are silently dropped after lock.
+ */
+
+const SCALE      = 100;
+const RAND_RANGE = 1e11;
+
+/* ── helpers ── */
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const ini = n => n.trim().split(/\s+/).map(w=>w[0]).join('').toUpperCase().slice(0,2)||'?';
+
+function genId() {
+  const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({length:6}, () => c[Math.floor(Math.random()*c.length)]).join('');
+}
+function showScreen(id) {
+  ['s-welcome','s-room'].forEach(s => $(s).classList.toggle('active', s===id));
+}
+function setConn(txt, cls) {
+  const b = $('conn-badge');
+  b.className = 'badge' + (cls ? ' '+cls : '');
+  if (!b.querySelector('.pulse')) { const d=document.createElement('div'); d.className='pulse'; b.prepend(d); }
+  $('conn-txt').textContent = txt;
+}
+function setBanner(txt, cls) {
+  const b = $('phase-banner');
+  if (!txt) { b.style.display='none'; return; }
+  b.style.display='flex'; b.className='banner '+(cls||'info'); b.textContent=txt;
+}
+
+/* ── secret sharing ── */
+function makeShares(value, lockedIds, myId) {
+  const scaled   = Math.round(value * SCALE);
+  const others   = lockedIds.filter(id => id !== myId);
+  const randoms  = others.map(() => Math.floor(Math.random()*(2*RAND_RANGE+1)) - RAND_RANGE);
+  const ownShare = scaled - randoms.reduce((a,b) => a+b, 0);
+  const shares   = { [myId]: ownShare };
+  others.forEach((id,i) => shares[id] = randoms[i]);
+  return shares;
+}
+
+/* ── state ── */
+const S = {
+  peer:null, myId:null, myName:'', isHost:false, roomId:null,
+  locked:false,
+  lockedIds:[],    // FROZEN sorted participant list — set once at lock time
+
+  guestMap:{},     // host only: peerId → {conn}
+  members:{},      // display: peerId → {name, submitted}
+  hostConn:null,
+
+  sharesIn:{},     // round 1: { senderId: intShare }    — keyed, dedup
+  colSumsIn:{},    // round 2: { senderId: intColSum }   — keyed, dedup (host only)
+  resultShown:false,
+};
+
+/* ── render ── */
+function renderMembers() {
+  const ids = Object.keys(S.members).sort();
+  $('p-title').textContent = `Participants (${ids.length})`;
+  const list = $('plist');
+  if (!ids.length) { list.innerHTML='<div class="empty-p">Waiting for participants…</div>'; return; }
+  list.innerHTML = '';
+  ids.forEach(id => {
+    const m=S.members[id], isMe=id===S.myId;
+    const d=document.createElement('div'); d.className='pitem';
+    d.innerHTML=`<div class="pleft"><div class="avatar">${ini(m.name)}</div>`+
+      `<span class="pname">${esc(m.name)}${isMe?'<span class="pyou">(you)</span>':''}</span></div>`+
+      `<div class="pstatus${m.submitted?' done':''}">`+
+      (m.submitted
+        ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>Ready'
+        : '<div class="dots"><span></span><span></span><span></span></div>')+
+      '</div>';
+    list.appendChild(d);
+  });
+}
+function updateLockBtn() {
+  const n = Object.keys(S.members).length;
+  $('btn-lock').disabled = n < 2;
+  $('lock-label').textContent = n<2 ? 'Waiting for participants…' : `Lock & Start (${n} people)`;
+}
+
+/* ── messaging ── */
+function toHost(msg) {
+  if (S.isHost) { onHostMsg(msg, S.myId); return; }
+  if (S.hostConn && S.hostConn.open) S.hostConn.send(msg);
+}
+function toGuest(pid, msg) {
+  if (pid===S.myId) { onGuestMsg(msg); return; }
+  const g = S.guestMap[pid];
+  if (g && g.conn && g.conn.open) g.conn.send(msg);
+}
+function bcast(msg, skip) {
+  const targets = S.locked ? S.lockedIds : Object.keys(S.members);
+  targets.forEach(id => { if (id!==skip) toGuest(id, msg); });
+}
+
+/* ── HOST message handler ── */
+function onHostMsg(msg, fromId) {
+
+  if (msg.type === 'hello') {
+    if (S.locked) { toGuest(fromId, {type:'rejected'}); return; }
+    S.members[fromId] = { name:msg.name, submitted:false };
+    const snap = Object.fromEntries(
+      Object.entries(S.members).map(([id,m]) => [id, {name:m.name, submitted:m.submitted}])
+    );
+    toGuest(fromId, { type:'welcome', myId:fromId, members:snap });
+    bcast({ type:'joined', id:fromId, name:msg.name }, fromId);
+    renderMembers(); updateLockBtn();
+
+  } else if (msg.type === 'share_for') {
+    // Drop if not from a locked participant or target not in locked list
+    if (!S.locked) return;
+    if (!S.lockedIds.includes(fromId) || !S.lockedIds.includes(msg.to)) return;
+    if (msg.to === S.myId) {
+      r1_receive(fromId, msg.share);
+    } else {
+      toGuest(msg.to, { type:'your_share', from:fromId, share:msg.share });
+    }
+
+  } else if (msg.type === 'col_sum') {
+    if (!S.locked || !S.lockedIds.includes(fromId)) return;
+    if (S.colSumsIn[fromId] !== undefined) return;   // deduplicate
+    S.colSumsIn[fromId] = msg.sum;
+    if (S.members[fromId]) S.members[fromId].submitted = true;
+    bcast({ type:'member_submitted', id:fromId });
+    renderMembers();
+    const done  = Object.keys(S.colSumsIn).length;
+    const total = S.lockedIds.length;
+    setBanner(`Collecting fragments… (${done}/${total} ready)`, 'info');
+    if (done >= total) {
+      const globalScaled = Object.values(S.colSumsIn).reduce((a,b) => a+b, 0);
+      const result = Math.round(globalScaled) / SCALE;
+      bcast({ type:'result', sum:result });
+      showResult(result);
+    }
+
+  } else if (msg.type === 'reset') {
+    doReset(false); bcast({ type:'reset' });
+  }
+}
+
+/* ── GUEST message handler ── */
+function onGuestMsg(msg) {
+
+  if (msg.type === 'welcome') {
+    S.members = {};
+    Object.entries(msg.members).forEach(([id,m]) =>
+      S.members[id] = { name:m.name, submitted:m.submitted }
+    );
+    renderMembers();
+
+  } else if (msg.type === 'joined') {
+    if (!S.locked) { S.members[msg.id]={name:msg.name,submitted:false}; renderMembers(); }
+
+  } else if (msg.type === 'left') {
+    if (!S.locked) { delete S.members[msg.id]; renderMembers(); }
+
+  } else if (msg.type === 'rejected') {
+    setConn('Room is locked','err'); showScreen('s-welcome');
+
+  } else if (msg.type === 'lock') {
+    S.locked    = true;
+    S.lockedIds = msg.lockedIds;              // frozen sorted list from host
+    S.members   = {};
+    S.lockedIds.forEach(id => S.members[id] = { name:msg.names[id], submitted:false });
+    renderMembers();
+    $('num-card').style.display = '';
+    setBanner('Room locked — enter your secret number below', 'info');
+
+  } else if (msg.type === 'your_share') {
+    if (!S.locked || !S.lockedIds.includes(msg.from)) return;
+    r1_receive(msg.from, msg.share);
+
+  } else if (msg.type === 'member_submitted') {
+    if (S.members[msg.id]) S.members[msg.id].submitted = true;
+    renderMembers();
+    const done  = Object.values(S.members).filter(m=>m.submitted).length;
+    const total = S.lockedIds.length;
+    setBanner(`Collecting fragments… (${done}/${total} ready)`, 'info');
+
+  } else if (msg.type === 'result') {
+    showResult(msg.sum);
+
+  } else if (msg.type === 'reset') {
+    doReset(false);
+  }
+}
+
+/* ── round 1: receive a share ── */
+function r1_receive(fromId, share) {
+  if (!S.lockedIds.includes(fromId))    return;  // not a locked participant
+  if (S.sharesIn[fromId] !== undefined) return;  // deduplicate
+  S.sharesIn[fromId] = share;
+  if (Object.keys(S.sharesIn).length >= S.lockedIds.length) {
+    const colSum = Object.values(S.sharesIn).reduce((a,b) => a+b, 0);
+    toHost({ type:'col_sum', sum:colSum });
+  }
+}
+
+/* ── submit number ── */
+function submitNumber() {
+  const raw = $('num-inp').value.trim();
+  if (!raw) return;
+  const v = parseFloat(raw);
+  if (isNaN(v)) return;
+  if (v < -1e9 || v > 1e9) {
+    $('num-hint').innerHTML = '<strong style="color:var(--error)">Value must be between −1,000,000,000 and +1,000,000,000.</strong>';
+    return;
+  }
+  $('btn-submit').disabled = true;
+  $('num-inp').disabled    = true;
+  $('num-hint').innerHTML  = '<strong>Fragments sent.</strong> Your number never left this device.';
+
+  const shares = makeShares(v, S.lockedIds, S.myId);    // uses FROZEN list
+  r1_receive(S.myId, shares[S.myId]);                     // own share stored locally
+  S.lockedIds.forEach(id => {
+    if (id !== S.myId) toHost({ type:'share_for', to:id, share:shares[id] });
+  });
+}
+
+/* ── show result ── */
+function showResult(sum) {
+  if (S.resultShown) return;
+  S.resultShown = true;
+  $('result-wrap').style.display = '';
+  $('num-card').style.opacity = '.4';
+  $('num-card').style.pointerEvents = 'none';
+  setBanner('Sum computed — no individual numbers were revealed', 'ok');
+  const n = S.lockedIds.length;
+  $('result-sub').textContent = `Sum of ${n} secret numbers`;
+  const fmt = v => v.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:2});
+  $('result-avg').textContent = fmt(sum / n);
+  const el=$('result-num'), dur=700, t0=performance.now();
+  (function tick(now){
+    const p=Math.min((now-t0)/dur,1), e=1-Math.pow(1-p,3);
+    el.textContent=fmt(sum*e);
+    if(p<1) requestAnimationFrame(tick); else el.textContent=fmt(sum);
+  })(performance.now());
+}
+
+/* ── lock room (host only) ── */
+function lockRoom() {
+  S.lockedIds = Object.keys(S.members).sort();    // FREEZE participant list now
+  S.locked    = true;
+  const names = Object.fromEntries(S.lockedIds.map(id => [id, S.members[id].name]));
+  bcast({ type:'lock', lockedIds:S.lockedIds, names });
+  S.members = {};
+  S.lockedIds.forEach(id => S.members[id] = { name:names[id], submitted:false });
+  renderMembers();
+  $('num-card').style.display  = '';
+  $('host-card').style.display = 'none';
+  setBanner('Room locked — enter your secret number below', 'info');
+}
+
+/* ── reset ── */
+function doReset(andBcast) {
+  S.locked=false; S.lockedIds=[]; S.resultShown=false;
+  S.sharesIn={}; S.colSumsIn={};
+  Object.values(S.members).forEach(m => m.submitted=false);
+  $('num-inp').value=''; $('num-inp').disabled=false; $('btn-submit').disabled=false;
+  $('num-hint').innerHTML='Range: −1,000,000,000 to +1,000,000,000 · up to 2 decimal places.<br>Your number is <strong>never transmitted</strong> — only random fragments are exchanged.';
+  $('result-wrap').style.display='none';
+  $('num-card').style.display='none';
+  $('num-card').style.opacity=''; $('num-card').style.pointerEvents='';
+  setBanner(null); renderMembers();
+  if (S.isHost) { $('host-card').style.display=''; updateLockBtn(); }
+  if (andBcast) { if(S.isHost) bcast({type:'reset'}); else toHost({type:'reset'}); }
+}
+
+/* ── start as host ── */
+function startHost(name) {
+  S.myName=name; S.isHost=true;
+  const rid=genId(); S.roomId=rid;
+  showScreen('s-room'); setConn('Starting…');
+  const peer = new Peer(rid, {debug:0}); S.peer=peer;
+  peer.on('open', id => {
+    S.myId=id;
+    S.members[id]={ name, submitted:false };
+    setConn('Room open · waiting for guests','ok');
+    $('rid-display').textContent=rid;
+    $('role-lbl').textContent='Host';
+    $('host-card').style.display='';
+    renderMembers(); updateLockBtn();
+  });
+  peer.on('connection', conn => {
+    const pid=conn.peer; S.guestMap[pid]={ conn };
+    conn.on('data',  msg => onHostMsg(msg, pid));
+    conn.on('close', ()  => {
+      delete S.guestMap[pid];
+      if (!S.locked) { delete S.members[pid]; renderMembers(); updateLockBtn(); }
+      // After lock: keep member entry in S.members (lockedIds already frozen)
+    });
+  });
+  peer.on('error', e => {
+    if (e.type==='unavailable-id') { peer.destroy(); startHost(name); }
+    else setConn('Connection error','err');
+  });
+}
+
+/* ── start as guest ── */
+function startGuest(name, rid) {
+  S.myName=name; S.isHost=false; S.roomId=rid;
+  showScreen('s-room'); setConn('Connecting…');
+  const peer = new Peer(undefined, {debug:0}); S.peer=peer;
+  peer.on('open', myId => {
+    S.myId=myId;
+    const conn=peer.connect(rid,{reliable:true}); S.hostConn=conn;
+    conn.on('open',  ()  => { setConn('Connected','ok'); $('role-lbl').textContent='Guest'; conn.send({type:'hello',name}); });
+    conn.on('data',  msg => onGuestMsg(msg));
+    conn.on('close', ()  => setConn('Disconnected','err'));
+    conn.on('error', ()  => {
+      $('join-err').textContent='Could not connect. Check the Room ID.';
+      $('join-err').style.display='';
+      showScreen('s-welcome'); peer.destroy();
+    });
+  });
+  peer.on('error', () => {
+    $('join-err').textContent='Room not found or connection failed.';
+    $('join-err').style.display='';
+    showScreen('s-welcome');
+  });
+}
+
+/* ── UI events ── */
+$('btn-create').addEventListener('click', () => startHost($('host-name').value.trim()||'Host'));
+$('btn-join').addEventListener('click', () => {
+  const rid = $('join-rid').value.trim().toUpperCase();
+  if (!rid) { $('join-err').textContent='Please enter a Room ID.'; $('join-err').style.display=''; return; }
+  $('join-err').style.display='none';
+  startGuest($('join-name').value.trim()||'Guest', rid);
+});
+$('join-rid').addEventListener('input',    e => e.target.value=e.target.value.toUpperCase());
+$('host-name').addEventListener('keydown', e => { if(e.key==='Enter') $('btn-create').click(); });
+$('join-rid').addEventListener('keydown',  e => { if(e.key==='Enter') $('btn-join').click(); });
+$('btn-lock').addEventListener('click',   lockRoom);
+$('btn-submit').addEventListener('click', submitNumber);
+$('num-inp').addEventListener('keydown',  e => { if(e.key==='Enter') submitNumber(); });
+$('btn-copy').addEventListener('click', () => {
+  navigator.clipboard.writeText($('rid-display').textContent).then(() => {
+    $('btn-copy').textContent='Copied!';
+    setTimeout(() => $('btn-copy').textContent='Copy', 2000);
+  });
+});
+$('btn-reset').addEventListener('click', () => doReset(true));
+
+/* ── theme ── */
+const htmlEl = document.documentElement;
+let theme = htmlEl.getAttribute('data-theme')||'dark';
+function applyTheme(){
+  htmlEl.setAttribute('data-theme',theme);
+  $('theme-btn').innerHTML=theme==='dark'
+    ?'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>'
+    :'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+}
+applyTheme();
+$('theme-btn').addEventListener('click', () => { theme=theme==='dark'?'light':'dark'; applyTheme(); });
+</script>
+</body>
+</html>

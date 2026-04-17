@@ -488,6 +488,16 @@ function showResult(sum) {
   $('result-sub').textContent = `Sum of ${n} secret numbers`;
   const fmt = v => v.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:2});
   $('result-avg').textContent = fmt(sum / n);
+  // Host gets action buttons; guests get waiting message
+  if (S.isHost) {
+    $('btn-reset').style.display = '';
+    $('btn-edit-participants').style.display = '';
+    $('guest-waiting-nr').style.display = 'none';
+  } else {
+    $('btn-reset').style.display = 'none';
+    $('btn-edit-participants').style.display = 'none';
+    $('guest-waiting-nr').style.display = '';
+  }
   const el=$('result-num'), dur=700, t0=performance.now();
   (function tick(now){
     const p=Math.min((now-t0)/dur,1), e=1-Math.pow(1-p,3);
@@ -513,6 +523,14 @@ function lockRoom() {
   $('guest-waiting-nr').style.display = 'none';
 }
 
+/* ── helper: show host action buttons ── */
+function showHostActions() {
+  if (!S.isHost) return;
+  $('btn-reset').style.display = '';
+  $('btn-edit-participants').style.display = '';
+  $('guest-waiting-nr').style.display = 'none';
+}
+
 /* ── reset (new round, keep same participants) ── */
 function doReset(andBcast) {
   // Keep S.locked=true and S.lockedIds intact — same participants, new round
@@ -527,7 +545,7 @@ function doReset(andBcast) {
   renderMembers();
   $('guest-waiting-nr').style.display = 'none';
   $('btn-edit-participants').style.display = 'none';
-  if (S.isHost) { $('btn-reset').style.display = ''; }
+  $('btn-reset').style.display = 'none';
   if (andBcast) { if(S.isHost) bcast({type:'reset'}); else toHost({type:'reset'}); }
 }
 

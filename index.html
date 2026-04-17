@@ -610,74 +610,78 @@ function startHost(name) {
 
 /* ── promote guest to host after host disconnect ── */
 function attemptHostClaim(rid, name) {
-  // Try to create a peer with the room ID — succeeds only if host is gone
+  setConn('Host left — trying to become host…', '');
   const testPeer = new Peer(rid, {debug:0});
+
   testPeer.on('open', () => {
-    // We claimed the host slot — promote ourselves
-    if (S.peer) S.peer.destroy();
-    S.peer = testPeer;
-    S.myId = rid;
-    S.isHost = true;
+    // ── Claimed! Promote this guest to host ──
+    if (S.peer && S.peer !== testPeer) S.peer.destroy();
+    S.peer    = testPeer;
+    S.myId    = rid;
+    S.isHost  = true;
     S.hostConn = null;
     S.guestMap = {};
-    // Keep existing members but clear protocol state for fresh round
-    S.sharesIn = {}; S.colSumsIn = {};
-    setConn('You are now the host','ok');
-    $('role-lbl').textContent = 'Host (promoted)';
+    S.locked   = false;
+    S.lockedIds = [];
+    S.sharesIn  = {};
+    S.colSumsIn = {};
+    S.resultShown = false;
+
+    // Ensure promoted host is in members list with correct name
+    // Remove any stale old-host entry (old host had id=rid too, so it's already the slot)
+    S.members[rid] = { name, submitted: false };
+
+    // Reset all UI to clean host state
+    $('num-inp').value = ''; $('num-inp').disabled = false; $('btn-submit').disabled = false;
+    $('result-wrap').style.display   = 'none';
+    $('num-card').style.display      = 'none';
+    $('num-card').style.opacity      = '';
+    $('num-card').style.pointerEvents = '';
+
+    // Show host card with room ID and invite link
+    $('host-card').style.display   = '';
+    $('rid-display').textContent   = rid;
     history.replaceState(null, '', '#' + rid);
     const inviteUrl = location.href.split('#')[0] + '#' + rid;
-    $('share-link-inp').value = inviteUrl;
+    $('share-link-inp').value      = inviteUrl;
     $('share-link-box').style.display = '';
-    // Show host UI
-    if (!S.locked) {
-      $('host-card').style.display = '';
-      $('rid-display').textContent = rid;
-      updateLockBtn();
-    } else {
-      // Was mid-round: reset to start of new round as host
-      S.locked = false; S.lockedIds = [];
-      Object.values(S.members).forEach(m => m.submitted = false);
-      $('result-wrap').style.display = 'none';
-      $('num-card').style.display = 'none';
-      $('num-card').style.opacity = ''; $('num-card').style.pointerEvents = '';
-      $('host-card').style.display = '';
-      $('rid-display').textContent = rid;
-      $('btn-reset').style.display = 'none';
-      $('btn-edit-participants').style.display = 'none';
-      setBanner('You became the host — edit participants and lock when ready', 'info');
-      $('btn-reset').style.display = '';
-      $('btn-edit-participants').style.display = '';
-      $('guest-waiting-nr').style.display = 'none';
-      updateLockBtn();
-    }
-    // Accept incoming connections from other guests
+
+    // Host action buttons always visible for host
+    $('btn-reset').style.display            = '';
+    $('btn-edit-participants').style.display = '';
+    $('guest-waiting-nr').style.display     = 'none';
+
+    setConn('You are now the host', 'ok');
+    $('role-lbl').textContent = 'Host (promoted)';
+    setBanner('You became the host — add participants and lock when ready', 'info');
+    renderMembers();
+    updateLockBtn();
+
+    // Accept incoming connections from other guests reconnecting
     testPeer.on('connection', conn => {
-      const pid = conn.peer; S.guestMap[pid] = {conn};
+      const pid = conn.peer;
+      S.guestMap[pid] = { conn };
       conn.on('data',  msg => onHostMsg(msg, pid));
-      conn.on('close', ()  => {
+      conn.on('close', () => {
         delete S.guestMap[pid];
         if (!S.locked) { delete S.members[pid]; renderMembers(); updateLockBtn(); }
       });
-      // Tell reconnecting guest who they are and current member list
-      const snap = Object.fromEntries(
-        Object.entries(S.members).map(([id,m]) => [id, {name:m.name,submitted:m.submitted}])
-      );
       conn.on('open', () => {
-        conn.send({type:'welcome', myId:pid, members:snap});
-        if (S.locked) conn.send({type:'lock', lockedIds:S.lockedIds,
-          names:Object.fromEntries(S.lockedIds.map(id=>[id,S.members[id]?.name||'?']))});
+        const snap = Object.fromEntries(
+          Object.entries(S.members).map(([id,m]) => [id, {name:m.name, submitted:m.submitted}])
+        );
+        conn.send({ type:'welcome', myId:pid, members:snap });
       });
     });
-    renderMembers();
   });
+
   testPeer.on('error', e => {
-    // Room ID already taken → real host is back or another guest claimed it first
-    // Try to reconnect as guest after short delay
     testPeer.destroy();
     if (e.type === 'unavailable-id') {
+      // Someone else already claimed host — reconnect as guest
       setTimeout(() => reconnectAsGuest(rid, name), 1500);
     } else {
-      setConn('Could not reconnect','err');
+      setConn('Could not reconnect', 'err');
     }
   });
 }

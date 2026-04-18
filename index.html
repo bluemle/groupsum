@@ -460,7 +460,10 @@ function onGuestMsg(msg) {
     S.hostWatchdog = setTimeout(() => {
       // No ping for 7s → host gone
       setConn('Host disconnected — trying to become host…', 'err');
-      if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
+      if (S.peer) {
+      try { S.peer.destroy(); } catch(e){}
+      S.peer = null;
+    }
       // Wait 6s for PeerJS server to release the host peer ID before claiming
       attemptHostPromotion();
     }, 7000);
@@ -534,7 +537,8 @@ function onGuestMsg(msg) {
     doReset(false);
   } else if (msg.type === 'unlock') {
     S.locked=false; S.lockedIds=[]; S.resultShown=false;
-    S.sharesIn={}; S.colSumsIn={};
+    S.sharesIn = {};
+    S.colSumsIn = {};
     $('num-inp').value=''; $('num-inp').disabled=false; $('btn-submit').disabled=false;
     $('result-wrap').style.display='none';
     $('num-card').style.display='none'; $('num-card').style.opacity=''; $('num-card').style.pointerEvents='';
@@ -636,7 +640,8 @@ function doReset(andBcast) {
   // Keep S.locked=true and S.lockedIds intact — same participants, new round
   S.resultShown=false;
   setConn('🔒 Locked · ' + S.lockedIds.length + ' participants', 'warn');
-  S.sharesIn={}; S.colSumsIn={};
+  S.sharesIn = {};
+    S.colSumsIn = {};
   Object.values(S.members).forEach(m => m.submitted=false);
   $('num-inp').value=''; $('num-inp').disabled=false; $('btn-submit').disabled=false;
   $('num-hint').innerHTML='Range: −1,000,000,000 to +1,000,000,000 · up to 2 decimal places.<br>Your number is <strong>never transmitted</strong> — only random fragments are exchanged.';
@@ -652,7 +657,8 @@ function doReset(andBcast) {
 /* ── unlock room for editing participants (host only) ── */
 function unlockForEditing() {
   S.locked=false; S.lockedIds=[];
-  S.sharesIn={}; S.colSumsIn={}; S.resultShown=false;
+  S.sharesIn = {};
+    S.colSumsIn = {}; S.resultShown=false;
   Object.values(S.members).forEach(m => m.submitted=false);
   $('num-inp').value=''; $('num-inp').disabled=false; $('btn-submit').disabled=false;
   $('result-wrap').style.display='none';
@@ -735,7 +741,10 @@ function probeNewHostGen(roomId, gen, myName) {
       testPeer.destroy();
       // New host found — downgrade self to guest
       setConn('New host detected — rejoining as guest…', '');
-      if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
+      if (S.peer) {
+      try { S.peer.destroy(); } catch(e){}
+      S.peer = null;
+    }
       if (S.heartbeatTimer) { clearInterval(S.heartbeatTimer); S.heartbeatTimer = null; }
       // Reset host UI elements before re-joining as guest
       $('host-card').style.display    = 'none';
@@ -910,7 +919,10 @@ function promoteToHost(gen) {
 function reconnectToNewHost(gen) {
   S.promotionStarted = false;
   setConn('Reconnecting…', '');
-  if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
+  if (S.peer) {
+      try { S.peer.destroy(); } catch(e){}
+      S.peer = null;
+    }
   const peer = new Peer(undefined, {host:'peerjs.92k.de',port:443,secure:true,path:'/',debug:0}); S.peer = peer;
   peer.on('open', myId => {
     S.myId = myId; S.isHost = false;
@@ -947,7 +959,10 @@ function probeAndJoin(rid, name, peer, gen) {
     if (S.hostWatchdog) clearTimeout(S.hostWatchdog);
     S.hostWatchdog = setTimeout(() => {
       setConn('Host disconnected — trying to become host…', 'err');
-      if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
+      if (S.peer) {
+      try { S.peer.destroy(); } catch(e){}
+      S.peer = null;
+    }
       attemptHostPromotion();
     }, 7000);
   });
@@ -958,7 +973,10 @@ function probeAndJoin(rid, name, peer, gen) {
     if (!opened) return;
     clearTimeout(timeout);
     setConn('Host disconnected — trying to become host…', 'err');
-    if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
+    if (S.peer) {
+      try { S.peer.destroy(); } catch(e){}
+      S.peer = null;
+    }
     attemptHostPromotion();
   });
 

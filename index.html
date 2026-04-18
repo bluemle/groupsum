@@ -711,6 +711,14 @@ function startHost(name, existingRid) {
     conn.on('data',  msg => onHostMsg(msg, pid));
     conn.on('close', () => {
       delete S.guestMap[pid];
+      // If all guests gone, probe whether a new host took over
+      if (Object.keys(S.guestMap).length === 0 && S.isHost) {
+        setTimeout(() => {
+          if (Object.keys(S.guestMap).length === 0 && S.isHost) {
+            probeNewHostGen(S.roomId, S.hostGen + 1, name);
+          }
+        }, 5000);
+      }
       if (!S.locked) {
         delete S.members[pid];
         bcast({ type:'left', id:pid });
@@ -755,7 +763,7 @@ function startHost(name, existingRid) {
 }
 
 /* ── host checks if a new host took over while disconnected ── */
-function probeNewHostGen(roomId, gen, name) {
+function probeNewHostGen(roomId, gen, myName) {
   if (gen > 20) return; // nobody took over
   const testPeer = new Peer(undefined, {host:'peerjs.92k.de',port:443,secure:true,path:'/',debug:0});
   testPeer.on('open', () => {
@@ -775,7 +783,7 @@ function probeNewHostGen(roomId, gen, name) {
       S.isHost = false;
       S.guestMap = {};
       if (S.heartbeatTimer) { clearInterval(S.heartbeatTimer); S.heartbeatTimer = null; }
-      startGuest(name, roomId);
+      startGuest(myName || S.myName, roomId);
     });
     conn.on('error', () => { clearTimeout(t); testPeer.destroy(); });
   });
@@ -851,6 +859,13 @@ function promoteToHost(gen) {
       conn.on('data',  msg => onHostMsg(msg, pid));
       conn.on('close', () => {
         delete S.guestMap[pid];
+        if (Object.keys(S.guestMap).length === 0 && S.isHost) {
+          setTimeout(() => {
+            if (Object.keys(S.guestMap).length === 0 && S.isHost) {
+              probeNewHostGen(S.roomId, S.hostGen + 1, S.myName);
+            }
+          }, 5000);
+        }
         if (!S.locked) {
           delete S.members[pid];
           bcast({ type:'left', id:pid });

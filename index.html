@@ -825,6 +825,7 @@ function attemptHostPromotion() {
 }
 
 function promoteToHost(gen) {
+  const oldGuestId = S.myId; // Save our old guest ID before overwriting
   const newPeerId = hostPeerIdForGen(S.roomId, gen);
   setConn('Becoming host…', '');
   const newPeer = new Peer(newPeerId, {host:'peerjs.92k.de',port:443,secure:true,path:'/',debug:0});
@@ -839,9 +840,8 @@ function promoteToHost(gen) {
     if (S.heartbeatTimer) { clearInterval(S.heartbeatTimer); S.heartbeatTimer = null; }
     if (S.guestHeartbeat) { clearInterval(S.guestHeartbeat); S.guestHeartbeat = null; }
 
-    // Fix member list
-    const oldMyId = Object.keys(S.members).find(id => id !== S.hostPeerId && S.members[id]?.name === S.myName);
-    if (oldMyId) delete S.members[oldMyId];
+    // Fix member list: remove our old guest entry and the dead host
+    if (oldGuestId) delete S.members[oldGuestId];
     delete S.members[hostPeerIdForGen(S.roomId, gen - 1)];
     S.members[peerId] = { name: S.myName, submitted: false };
 

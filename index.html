@@ -443,6 +443,7 @@ function onGuestMsg(msg) {
     if (msg.locked && msg.lockedIds) {
       S.locked = true;
       S.lockedIds = msg.lockedIds;
+      S.sharesIn  = {}; S.resultShown = false;  // fresh round after reconnect
       $('num-card').style.display = '';
       setBanner('Room locked — enter your secret number below', 'info');
     }
@@ -465,6 +466,7 @@ function onGuestMsg(msg) {
   } else if (msg.type === 'lock') {
     S.locked    = true;
     S.lockedIds = msg.lockedIds;              // frozen sorted list from host
+    S.sharesIn  = {}; S.resultShown = false;  // fresh round
     S.members   = {};
     S.lockedIds.forEach(id => S.members[id] = { name:msg.names[id], submitted:false });
     renderMembers();

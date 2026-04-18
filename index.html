@@ -365,13 +365,20 @@ function checkSumComplete() {
 }
 
 function runReaper() {
-  runReaper();
-      renderMembers(); updateLockBtn();
+  const now = Date.now();
+  Object.keys(S.guestMap).forEach(pid => {
+    if (!(S.lastSeen[pid] || 0) || now - S.lastSeen[pid] <= 8000) return;
+    const g = S.guestMap[pid];
+    if (g?.conn) { try { g.conn.close(); } catch(e){} }
+    delete S.guestMap[pid]; delete S.lastSeen[pid];
+    const hadSubmitted = !!S.colSumsIn[pid];
+    S.lockedIds = S.lockedIds.filter(id => id !== pid);
+    delete S.members[pid]; delete S.sharesIn[pid]; delete S.colSumsIn[pid];
+    bcast({ type:'left', id:pid });
+    renderMembers(); updateLockBtn();
     if (!hadSubmitted && Object.keys(S.sharesIn).length > 0) {
       setTimeout(() => { doReset(true); setBanner('A participant left — please re-enter your numbers', 'warn'); }, 800);
-    } else {
-      checkSumComplete();
-    }
+    } else { checkSumComplete(); }
   });
 }
 /* ── HOST message handler ── */
@@ -690,17 +697,7 @@ function startHost(name, existingRid) {
     S.heartbeatTimer = setInterval(() => {
       if (!S.isHost) return;
       bcast({ type:'ping', gen: S.hostGen });
-      runReaper();
-      renderMembers(); updateLockBtn();
-          const done = Object.keys(S.colSumsIn).length;
-          const total = S.lockedIds.length;
-          if (!hadSubmitted && Object.keys(S.sharesIn).length > 0) {
-            setTimeout(() => { doReset(true); setBanner('A participant left — please re-enter your numbers', 'warn'); }, 800);
-          } else {
-            checkSumComplete();
-          }
-        }
-      });
+      runReaper();;
     }, 4000);
     // Set hash and show invite link
     history.replaceState(null, '', '#' + rid);
@@ -803,7 +800,7 @@ function promoteToHost(gen) {
     S.heartbeatTimer = setInterval(() => {
       if (!S.isHost) return;
       bcast({type:'ping', gen});
-      runReaper();
+      runReaper();;
     }, 4000);
     renderMembers(); updateLockBtn();
 

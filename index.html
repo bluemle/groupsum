@@ -385,6 +385,7 @@ function runReaper() {
 function onHostMsg(msg, fromId) {
 
   if (msg.type === 'hello') {
+    console.log('[host] hello from', fromId, 'name:', msg.name);
     // Check if this is a locked-participant reconnecting under a new peer ID
     const staleId = S.locked
       ? Object.keys(S.members).find(id => id !== fromId && S.members[id]?.name === msg.name)
@@ -454,7 +455,7 @@ function onHostMsg(msg, fromId) {
 function onGuestMsg(msg) {
 
   if (msg.type === 'ping') {
-    // Reset watchdog — host is alive; update known generation
+    console.log('[guest] ping gen', msg.gen);
     if (msg.gen !== undefined) S.hostGen = msg.gen;
     if (S.hostWatchdog) clearTimeout(S.hostWatchdog);
     S.hostWatchdog = setTimeout(() => {
@@ -709,7 +710,9 @@ function startHost(name, existingRid) {
   });
   peer.on('connection', conn => {
     const pid=conn.peer; S.guestMap[pid]={ conn };
-    conn.on('data',  msg => onHostMsg(msg, pid));
+    console.log('[host] incoming connection from', pid);
+    conn.on('open',  () => console.log('[host] conn OPEN from', pid));
+    conn.on('data',  msg => { console.log('[host] data from', pid, msg.type); onHostMsg(msg, pid); });
     conn.on('close', () => {
       delete S.guestMap[pid];
       // If all guests gone, probe whether a new host took over
@@ -981,6 +984,7 @@ function probeAndJoin(rid, name, peer, gen) {
     }, 3000);
     if (S.hostWatchdog) clearTimeout(S.hostWatchdog);
     S.hostWatchdog = setTimeout(() => {
+      console.log('[watchdog] FIRED — no ping for 7s, hostConn open:', S.hostConn?.open);
       setConn('Host disconnected — trying to become host…', 'err');
       if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
       attemptHostPromotion();
@@ -990,15 +994,16 @@ function probeAndJoin(rid, name, peer, gen) {
   conn.on('data', msg => onGuestMsg(msg));
 
   conn.on('close', () => {
+    console.log('[probe] CLOSE gen', gen, 'opened:', opened);
     if (!opened) return;
     clearTimeout(timeout);
     if (S.hostConn !== conn) return;
     S.hostConn = null;
     setConn('Reconnecting…', '');
     if (S.hostWatchdog) { clearTimeout(S.hostWatchdog); S.hostWatchdog = null; }
-    // Wait 3s then reconnect with fresh peer — avoids false promotion on brief drop
     setTimeout(() => {
       if (S.isHost || (S.hostConn && S.hostConn.open)) return;
+      console.log('[probe] reconnecting with fresh peer');
       if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
       const freshPeer = new Peer(undefined, {host:'peerjs.92k.de',port:443,secure:true,path:'/',debug:0});
       S.peer = freshPeer;

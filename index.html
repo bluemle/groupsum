@@ -794,6 +794,8 @@ function startHeartbeat(gen) {
 }
 
 function claimOrFail(rid, name, peer) {
+  // Don't claim if a slow connection already opened in a parallel probe
+  if (S.hostConn && S.hostConn.open) return;
   if (isValidRoomId(rid)) {
     try { peer.destroy(); } catch(e){}
     setConn('Creating room…', '');
@@ -925,10 +927,12 @@ function probeAndJoin(rid, name, peer, gen) {
     } else if (!opened) {
       claimOrFail(rid, name, peer);
     }
-  }, 2000);
+  }, 5000);
 
   conn.on('open', () => {
     opened = true; clearTimeout(timeout);
+    // If a faster parallel probe already connected, discard this one
+    if (S.hostConn && S.hostConn.open && S.hostConn !== conn) { conn.close(); return; }
     S.hostPeerId = targetId; S.hostConn = conn; S.hostGen = gen;
     setConn('Connected', 'ok'); $('role-lbl').textContent = 'Guest';
     conn.send({type:'hello', name});

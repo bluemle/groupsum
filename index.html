@@ -391,8 +391,9 @@ function onHostMsg(msg, fromId) {
       : null;
     if (S.locked && !staleId) { toGuest(fromId, {type:'rejected'}); return; }
 
-    // Evict stale entry (same name, old peer ID)
-    const evictId = staleId || Object.keys(S.members).find(id => id !== fromId && S.members[id]?.name === msg.name);
+    // Evict stale entry ONLY if room is locked (allows returning to spot)
+    // If unlocked, allow multiple people with the same name (e.g. default "Guest")
+    const evictId = S.locked ? (staleId || Object.keys(S.members).find(id => id !== fromId && S.members[id]?.name === msg.name)) : null;
     if (evictId) {
       const staleConn = S.guestMap[evictId];
       if (staleConn?.conn) { try { staleConn.conn.close(); } catch(e){} }
@@ -481,7 +482,7 @@ function onGuestMsg(msg) {
 
   } else if (msg.type === 'joined') {
     if (!S.locked) {
-      Object.keys(S.members).forEach(id => { if (id !== msg.id && S.members[id]?.name === msg.name) delete S.members[id]; });
+      // Do not delete existing members with the same name if unlocked
       S.members[msg.id]={name:msg.name,submitted:false}; renderMembers();
     }
 

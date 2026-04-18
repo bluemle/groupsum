@@ -950,17 +950,11 @@ function probeAndJoin(rid, name, peer, gen) {
     }, 3000);
     if (S.hostWatchdog) clearTimeout(S.hostWatchdog);
     S.hostWatchdog = setTimeout(() => {
-      console.log('[watchdog] fired — no ping received, trying reconnect first');
-      if (S.hostConn && S.hostConn.open) return; // spurious watchdog
-      setConn('Reconnecting…', '');
-      S.hostConn = null;
-      setTimeout(() => {
-        if (S.hostConn && S.hostConn.open) return; // recovered
-        console.log('[watchdog] reconnect failed, promoting');
-        setConn('Host disconnected — trying to become host…', 'err');
-        if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
-        attemptHostPromotion();
-      }, 3000);
+      console.log('[watchdog] fired — no ping received, promoting');
+      if (S.hostConn && S.hostConn.open) return; // spurious watchdog, host still alive
+      setConn('Host disconnected — trying to become host…', 'err');
+      if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
+      attemptHostPromotion();
     }, 12000); // longer initial timeout — resets to 7s after first ping
   });
 
@@ -971,16 +965,10 @@ function probeAndJoin(rid, name, peer, gen) {
     if (!opened) return;
     clearTimeout(timeout);
     if (S.hostConn !== conn) return; // already reconnected elsewhere
-    // Brief grace period — try to reconnect before promoting
-    setConn('Reconnecting…', '');
+    // Let the watchdog decide — if host is alive, pings will keep arriving
+    // and the watchdog won't fire. Only promote if pings stop for 7s.
+    setConn('Connection dropped — waiting for host…', '');
     S.hostConn = null;
-    if (S.hostWatchdog) { clearTimeout(S.hostWatchdog); S.hostWatchdog = null; }
-    setTimeout(() => {
-      if (S.hostConn && S.hostConn.open) return; // recovered in the meantime
-      if (!S.peer) return; // already destroyed
-      console.log('[probe] reconnect attempt after close');
-      probeAndJoin(S.roomId, S.myName, S.peer, 0);
-    }, 2000);
   });
 
   conn.on('error', () => {

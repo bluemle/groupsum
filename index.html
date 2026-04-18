@@ -347,22 +347,33 @@ function bcast(msg, skip) {
 function onHostMsg(msg, fromId) {
 
   if (msg.type === 'hello') {
-    if (S.locked) { toGuest(fromId, {type:'rejected'}); return; }
-    // Evict any stale entry with same name (guest reconnected with a new peer ID)
-    Object.keys(S.members).forEach(id => {
-      if (id !== fromId && S.members[id]?.name === msg.name) {
-        const stale = S.guestMap[id];
-        if (stale?.conn) { try { stale.conn.close(); } catch(e){} }
-        delete S.guestMap[id];
-        delete S.members[id];
-      }
-    });
+    // Check if this is a locked-participant reconnecting under a new peer ID
+    const staleId = S.locked
+      ? Object.keys(S.members).find(id => id !== fromId && S.members[id]?.name === msg.name)
+      : null;
+    if (S.locked && !staleId) { toGuest(fromId, {type:'rejected'}); return; }
+
+    // Evict stale entry (same name, old peer ID)
+    const evictId = staleId || Object.keys(S.members).find(id => id !== fromId && S.members[id]?.name === msg.name);
+    if (evictId) {
+      const staleConn = S.guestMap[evictId];
+      if (staleConn?.conn) { try { staleConn.conn.close(); } catch(e){} }
+      delete S.guestMap[evictId];
+      delete S.members[evictId];
+      // Update lockedIds to use new peer ID
+      const li = S.lockedIds.indexOf(evictId);
+      if (li !== -1) S.lockedIds[li] = fromId;
+      // Clear their old share so they can resubmit
+      delete S.sharesIn[evictId];
+      delete S.colSumsIn[evictId];
+    }
+    const wasSubmitted = staleId ? false : false; // reset — they need to resubmit
     S.members[fromId] = { name:msg.name, submitted:false };
     const snap = Object.fromEntries(
       Object.entries(S.members).map(([id,m]) => [id, {name:m.name, submitted:m.submitted}])
     );
     toGuest(fromId, { type:'welcome', myId:fromId, members:snap, locked:S.locked, lockedIds:S.lockedIds });
-    bcast({ type:'joined', id:fromId, name:msg.name }, fromId);
+    if (!S.locked) bcast({ type:'joined', id:fromId, name:msg.name }, fromId);
     renderMembers(); updateLockBtn();
 
   } else if (msg.type === 'share_for') {

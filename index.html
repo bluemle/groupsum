@@ -840,10 +840,16 @@ function promoteToHost(gen) {
     if (S.heartbeatTimer) { clearInterval(S.heartbeatTimer); S.heartbeatTimer = null; }
     if (S.guestHeartbeat) { clearInterval(S.guestHeartbeat); S.guestHeartbeat = null; }
 
-    // Fix member list: remove our old guest entry and the dead host
-    if (oldGuestId) delete S.members[oldGuestId];
-    delete S.members[hostPeerIdForGen(S.roomId, gen - 1)];
-    S.members[peerId] = { name: S.myName, submitted: false };
+    // Fix member list
+    if (!S.locked) {
+      // Unlocked: clear all ghosts. Reconnecting guests will get fresh IDs and send 'hello'.
+      S.members = { [peerId]: { name: S.myName, submitted: false } };
+    } else {
+      // Locked: keep old IDs so reconnecting guests can reclaim their slots by name
+      if (oldGuestId) delete S.members[oldGuestId];
+      delete S.members[hostPeerIdForGen(S.roomId, gen - 1)];
+      S.members[peerId] = { name: S.myName, submitted: false };
+    }
 
     $('num-inp').value=''; $('num-inp').disabled=false; $('btn-submit').disabled=false;
     $('result-wrap').style.display='none';

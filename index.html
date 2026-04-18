@@ -470,7 +470,10 @@ function onGuestMsg(msg) {
     S.members   = {};
     S.lockedIds.forEach(id => S.members[id] = { name:msg.names[id], submitted:false });
     renderMembers();
-    $('num-card').style.display = '';
+    $('num-inp').value=''; $('num-inp').disabled=false; $('btn-submit').disabled=false;
+    $('num-hint').innerHTML='Range: −1,000,000,000 to +1,000,000,000 · up to 2 decimal places.<br>Your number is <strong>never transmitted</strong> — only random fragments are exchanged.';
+    $('result-wrap').style.display='none';
+    $('num-card').style.display=''; $('num-card').style.opacity=''; $('num-card').style.pointerEvents='';
     setBanner('Room locked — enter your secret number below', 'info');
 
   } else if (msg.type === 'your_share') {

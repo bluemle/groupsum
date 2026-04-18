@@ -375,7 +375,8 @@ function runReaper() {
     S.lockedIds = S.lockedIds.filter(id => id !== pid);
     delete S.members[pid]; delete S.sharesIn[pid]; delete S.colSumsIn[pid];
     bcast({ type:'left', id:pid });
-    renderMembers(); updateLockBtn();
+    renderMembers();
+      updateLockBtn();
     if (!hadSubmitted && Object.keys(S.sharesIn).length > 0) {
       setTimeout(() => { doReset(true); setBanner('A participant left — please re-enter your numbers', 'warn'); }, 800);
     } else { checkSumComplete(); }
@@ -413,16 +414,18 @@ function onHostMsg(msg, fromId) {
     );
     toGuest(fromId, { type:'welcome', myId:fromId, members:snap, locked:S.locked, lockedIds:S.lockedIds });
     if (!S.locked) bcast({ type:'joined', id:fromId, name:msg.name }, fromId);
-    renderMembers(); updateLockBtn();
+    renderMembers();
+      updateLockBtn();
 
   } else if (msg.type === 'share_for') {
-    // Drop if not from a locked participant or target not in locked list
+      // Drop if not from a locked participant or target not in locked list
     if (!S.locked) return;
     if (!S.lockedIds.includes(fromId) || !S.lockedIds.includes(msg.to)) return;
     if (msg.to === S.myId) {
       r1_receive(fromId, msg.share);
     } else {
-      toGuest(msg.to, { type:'your_share', from:fromId, share:msg.share });
+      toGuest(msg.to, { type:'your_share', from:fromId, share:msg.share
+    });
     }
 
   } else if (msg.type === 'col_sum') {
@@ -512,9 +515,11 @@ function onGuestMsg(msg) {
     S.members   = {};
     S.lockedIds.forEach(id => S.members[id] = { name:msg.names[id], submitted:false });
     renderMembers();
-    $('num-inp').value=''; $('num-inp').disabled=false; $('btn-submit').disabled=false;
+    $('num-inp').value = '';
+    $('num-inp').disabled = false;
+    $('btn-submit').disabled = false;
     $('num-hint').innerHTML='Range: −1,000,000,000 to +1,000,000,000 · up to 2 decimal places.<br>Your number is <strong>never transmitted</strong> — only random fragments are exchanged.';
-    $('result-wrap').style.display='none';
+    $('result-wrap').style.display = 'none';
     $('num-card').style.display=''; $('num-card').style.opacity=''; $('num-card').style.pointerEvents='';
     setConn('🔒 Locked · ' + S.lockedIds.length + ' participants', 'warn');
     setBanner('Room locked — enter your secret number below', 'info');
@@ -539,10 +544,14 @@ function onGuestMsg(msg) {
     S.locked=false; S.lockedIds=[]; S.resultShown=false;
     S.sharesIn = {};
     S.colSumsIn = {};
-    $('num-inp').value=''; $('num-inp').disabled=false; $('btn-submit').disabled=false;
-    $('result-wrap').style.display='none';
-    $('num-card').style.display='none'; $('num-card').style.opacity=''; $('num-card').style.pointerEvents='';
-    $('guest-waiting-nr').style.display='none';
+    $('num-inp').value = '';
+    $('num-inp').disabled = false;
+    $('btn-submit').disabled = false;
+    $('result-wrap').style.display = 'none';
+    $('num-card').style.display = 'none';
+    $('num-card').style.opacity = '';
+    $('num-card').style.pointerEvents = '';
+    $('guest-waiting-nr').style.display = 'none';
     setBanner('Host is editing participants — please wait…', 'info');
     renderMembers();
   }
@@ -643,9 +652,11 @@ function doReset(andBcast) {
   S.sharesIn = {};
     S.colSumsIn = {};
   Object.values(S.members).forEach(m => m.submitted=false);
-  $('num-inp').value=''; $('num-inp').disabled=false; $('btn-submit').disabled=false;
+  $('num-inp').value = '';
+    $('num-inp').disabled = false;
+    $('btn-submit').disabled = false;
   $('num-hint').innerHTML='Range: −1,000,000,000 to +1,000,000,000 · up to 2 decimal places.<br>Your number is <strong>never transmitted</strong> — only random fragments are exchanged.';
-  $('result-wrap').style.display='none';
+  $('result-wrap').style.display = 'none';
   $('num-card').style.display=''; $('num-card').style.opacity=''; $('num-card').style.pointerEvents='';
   setBanner('New round — enter your next secret number', 'info');
   renderMembers();
@@ -660,9 +671,13 @@ function unlockForEditing() {
   S.sharesIn = {};
     S.colSumsIn = {}; S.resultShown=false;
   Object.values(S.members).forEach(m => m.submitted=false);
-  $('num-inp').value=''; $('num-inp').disabled=false; $('btn-submit').disabled=false;
-  $('result-wrap').style.display='none';
-  $('num-card').style.display='none'; $('num-card').style.opacity=''; $('num-card').style.pointerEvents='';
+  $('num-inp').value = '';
+    $('num-inp').disabled = false;
+    $('btn-submit').disabled = false;
+  $('result-wrap').style.display = 'none';
+  $('num-card').style.display = 'none';
+    $('num-card').style.opacity = '';
+    $('num-card').style.pointerEvents = '';
   $('host-card').style.display='';
   setConn('Room open · waiting for guests', 'ok');
   // Keep New round visible; hide Edit participants (already in edit mode)
@@ -671,7 +686,8 @@ function unlockForEditing() {
   $('guest-waiting-nr').style.display = 'none';
   setBanner('Editing participants — add or remove, then lock again', 'info');
   bcast({type:'unlock'});
-  renderMembers(); updateLockBtn();
+  renderMembers();
+      updateLockBtn();
 }
 
 /* ── start as host ── */
@@ -694,7 +710,8 @@ function startHost(name, existingRid) {
     const inviteUrl = location.href.split('#')[0] + '#' + rid;
     $('share-link-inp').value = inviteUrl;
     $('share-link-box').style.display = '';
-    renderMembers(); updateLockBtn();
+    renderMembers();
+      updateLockBtn();
   });
   peer.on('connection', conn => {
     const pid=conn.peer; S.guestMap[pid]={ conn };
@@ -780,7 +797,8 @@ function onGuestClose(pid) {
   if (!S.locked) {
     delete S.members[pid];
     bcast({ type:'left', id:pid });
-    renderMembers(); updateLockBtn();
+    renderMembers();
+      updateLockBtn();
   } else {
     const hadSubmitted = !!S.colSumsIn[pid];
     S.lockedIds = S.lockedIds.filter(id => id !== pid);
@@ -860,9 +878,13 @@ function promoteToHost(gen) {
       S.members[peerId] = { name: S.myName, submitted: false };
     }
 
-    $('num-inp').value=''; $('num-inp').disabled=false; $('btn-submit').disabled=false;
-    $('result-wrap').style.display='none';
-    $('num-card').style.display='none'; $('num-card').style.opacity=''; $('num-card').style.pointerEvents='';
+    $('num-inp').value = '';
+    $('num-inp').disabled = false;
+    $('btn-submit').disabled = false;
+    $('result-wrap').style.display = 'none';
+    $('num-card').style.display = 'none';
+    $('num-card').style.opacity = '';
+    $('num-card').style.pointerEvents = '';
     $('host-card').style.display='';
     $('rid-display').textContent = S.roomId;
     history.replaceState(null, '', '#' + S.roomId);
@@ -877,7 +899,8 @@ function promoteToHost(gen) {
     setBanner('You became the host — same Room ID, same invite link!', 'info');
 
     startHeartbeat(gen);
-    renderMembers(); updateLockBtn();
+    renderMembers();
+      updateLockBtn();
 
     newPeer.on('connection', conn => {
       const pid = conn.peer; S.guestMap[pid] = {conn};

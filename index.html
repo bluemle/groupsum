@@ -460,7 +460,15 @@ function onGuestMsg(msg) {
 
   } else if (msg.type === 'left') {
     delete S.members[msg.id];
-    if (S.locked) S.lockedIds = S.lockedIds.filter(id => id !== msg.id);
+    if (S.locked) {
+      S.lockedIds = S.lockedIds.filter(id => id !== msg.id);
+      delete S.sharesIn[msg.id];  // drop any share from departed participant
+      // Re-check if we now have enough shares to send col_sum
+      if (S.lockedIds.length > 0 && Object.keys(S.sharesIn).length >= S.lockedIds.length) {
+        const colSum = Object.values(S.sharesIn).reduce((a,b) => a+b, 0);
+        toHost({ type:'col_sum', sum:colSum });
+      }
+    }
     renderMembers();
 
   } else if (msg.type === 'rejected') {

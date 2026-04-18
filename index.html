@@ -351,6 +351,29 @@ function bcast(msg, skip) {
   targets.forEach(id => { if (id!==skip) toGuest(id, msg); });
 }
 
+
+function checkSumComplete() {
+  if (!S.locked || S.resultShown) return;
+  const done  = Object.keys(S.colSumsIn).length;
+  const total = S.lockedIds.length;
+  if (total > 0 && done >= total) {
+    const globalScaled = Object.values(S.colSumsIn).reduce((a,b) => a+b, 0);
+    const result = Math.round(globalScaled) / SCALE;
+    bcast({ type:'result', sum:result });
+    showResult(result);
+  }
+}
+
+function runReaper() {
+  runReaper();
+      renderMembers(); updateLockBtn();
+    if (!hadSubmitted && Object.keys(S.sharesIn).length > 0) {
+      setTimeout(() => { doReset(true); setBanner('A participant left — please re-enter your numbers', 'warn'); }, 800);
+    } else {
+      checkSumComplete();
+    }
+  });
+}
 /* ── HOST message handler ── */
 function onHostMsg(msg, fromId) {
 
@@ -375,7 +398,6 @@ function onHostMsg(msg, fromId) {
       delete S.sharesIn[evictId];
       delete S.colSumsIn[evictId];
     }
-    const wasSubmitted = staleId ? false : false; // reset — they need to resubmit
     S.lastSeen[fromId] = Date.now();
     S.members[fromId] = { name:msg.name, submitted:false };
     const snap = Object.fromEntries(
@@ -405,12 +427,7 @@ function onHostMsg(msg, fromId) {
     const done  = Object.keys(S.colSumsIn).length;
     const total = S.lockedIds.length;
     setBanner(`Collecting fragments… (${done}/${total} ready)`, 'info');
-    if (done >= total) {
-      const globalScaled = Object.values(S.colSumsIn).reduce((a,b) => a+b, 0);
-      const result = Math.round(globalScaled) / SCALE;
-      bcast({ type:'result', sum:result });
-      showResult(result);
-    }
+    checkSumComplete();
 
   } else if (msg.type === 'i_submitted') {
     if (!S.locked || !S.lockedIds.includes(fromId)) return;
@@ -673,28 +690,14 @@ function startHost(name, existingRid) {
     S.heartbeatTimer = setInterval(() => {
       if (!S.isHost) return;
       bcast({ type:'ping', gen: S.hostGen });
-      const now = Date.now();
-      Object.keys(S.guestMap).forEach(pid => {
-        if ((S.lastSeen[pid] || 0) && now - S.lastSeen[pid] > 8000) {
-          const g = S.guestMap[pid];
-          if (g?.conn) { try { g.conn.close(); } catch(e){} }
-          delete S.guestMap[pid];
-          delete S.lastSeen[pid];
-          S.lockedIds = S.lockedIds.filter(id => id !== pid);
-          delete S.members[pid];
-          delete S.sharesIn[pid];
-          delete S.colSumsIn[pid];
-          bcast({ type:'left', id:pid });
-          renderMembers(); updateLockBtn();
+      runReaper();
+      renderMembers(); updateLockBtn();
           const done = Object.keys(S.colSumsIn).length;
           const total = S.lockedIds.length;
           if (!hadSubmitted && Object.keys(S.sharesIn).length > 0) {
             setTimeout(() => { doReset(true); setBanner('A participant left — please re-enter your numbers', 'warn'); }, 800);
-          } else if (S.locked && total > 0 && done >= total && !S.resultShown) {
-            const globalScaled = Object.values(S.colSumsIn).reduce((a,b) => a+b, 0);
-            const result = Math.round(globalScaled) / SCALE;
-            bcast({ type:'result', sum:result });
-            showResult(result);
+          } else {
+            checkSumComplete();
           }
         }
       });
@@ -726,14 +729,7 @@ function startHost(name, existingRid) {
         if (!hadSubmitted && Object.keys(S.sharesIn).length > 0) {
           setTimeout(() => { doReset(true); setBanner('A participant left — please re-enter your numbers', 'warn'); }, 800);
         } else {
-          const done = Object.keys(S.colSumsIn).length;
-          const total = S.lockedIds.length;
-          if (total > 0 && done >= total && !S.resultShown) {
-            const globalScaled = Object.values(S.colSumsIn).reduce((a,b) => a+b, 0);
-            const result = Math.round(globalScaled) / SCALE;
-            bcast({ type:'result', sum:result });
-            showResult(result);
-          }
+          checkSumComplete();
         }
       }
     });
@@ -753,13 +749,6 @@ function startHost(name, existingRid) {
 // Each handover increments the generation — no ID reuse, instant claim.
 function hostPeerIdForGen(roomId, gen) {
   return gen === 0 ? roomId : roomId + '_' + gen;
-}
-
-function electNewHost() {
-  const candidates = Object.keys(S.members)
-    .filter(id => id !== S.hostPeerId && S.members[id])
-    .sort();
-  return candidates.length ? candidates[0] : null;
 }
 
 function attemptHostPromotion() {
@@ -815,29 +804,15 @@ function promoteToHost(gen) {
       if (!S.isHost) return;
       bcast({type:'ping', gen});
       // Reaper: evict guests silent for >8s
-      const now = Date.now();
-      Object.keys(S.guestMap).forEach(pid => {
-        if ((S.lastSeen[pid] || 0) && now - S.lastSeen[pid] > 8000) {
-          const g = S.guestMap[pid];
-          if (g?.conn) { try { g.conn.close(); } catch(e){} }
-          delete S.guestMap[pid];
-          delete S.lastSeen[pid];
-          S.lockedIds = S.lockedIds.filter(id => id !== pid);
-          delete S.members[pid];
-          delete S.sharesIn[pid];
-          delete S.colSumsIn[pid];
-          bcast({ type:'left', id:pid });
-          renderMembers(); updateLockBtn();
+      runReaper();
+      renderMembers(); updateLockBtn();
           // Recheck sum completion
           const done = Object.keys(S.colSumsIn).length;
           const total = S.lockedIds.length;
           if (!hadSubmitted && Object.keys(S.sharesIn).length > 0) {
             setTimeout(() => { doReset(true); setBanner('A participant left — please re-enter your numbers', 'warn'); }, 800);
-          } else if (S.locked && total > 0 && done >= total && !S.resultShown) {
-            const globalScaled = Object.values(S.colSumsIn).reduce((a,b) => a+b, 0);
-            const result = Math.round(globalScaled) / SCALE;
-            bcast({ type:'result', sum:result });
-            showResult(result);
+          } else {
+            checkSumComplete();
           }
         }
       });
@@ -864,14 +839,7 @@ function promoteToHost(gen) {
           if (!hadSubmitted && Object.keys(S.sharesIn).length > 0) {
             setTimeout(() => { doReset(true); setBanner('A participant left — please re-enter your numbers', 'warn'); }, 800);
           } else {
-            const done  = Object.keys(S.colSumsIn).length;
-            const total = S.lockedIds.length;
-            if (total > 0 && done >= total && !S.resultShown) {
-              const globalScaled = Object.values(S.colSumsIn).reduce((a,b) => a+b, 0);
-              const result = Math.round(globalScaled) / SCALE;
-              bcast({ type:'result', sum:result });
-              showResult(result);
-            }
+            checkSumComplete();
           }
         }
       });
@@ -908,7 +876,6 @@ function reconnectToNewHost(gen) {
   peer.on('error', () => setTimeout(() => reconnectToNewHost(gen), 2000));
 }
 
-/* ── start as guest ── */
 /* ── probe host generations to find active host ── */
 function probeAndJoin(rid, name, peer, gen) {
   const targetId = hostPeerIdForGen(rid, gen);

@@ -411,7 +411,6 @@ function onHostMsg(msg, fromId) {
       Object.entries(S.members).map(([id,m]) => [id, {name:m.name, submitted:m.submitted}])
     );
     toGuest(fromId, { type:'welcome', myId:fromId, members:snap, locked:S.locked, lockedIds:S.lockedIds });
-    toGuest(fromId, { type:'ping', gen: S.hostGen }); // immediate ping so guest watchdog doesn't fire prematurely
     if (!S.locked) bcast({ type:'joined', id:fromId, name:msg.name }, fromId);
     renderMembers(); updateLockBtn();
 
@@ -454,7 +453,6 @@ function onHostMsg(msg, fromId) {
 function onGuestMsg(msg) {
 
   if (msg.type === 'ping') {
-    console.log('[ping] received from host gen', msg.gen);
     // Reset watchdog — host is alive; update known generation
     if (msg.gen !== undefined) S.hostGen = msg.gen;
     if (S.hostWatchdog) clearTimeout(S.hostWatchdog);
@@ -595,8 +593,15 @@ function showResult(sum) {
   const fmt = v => v.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:2});
   $('result-avg').textContent = fmt(sum / n);
   // Host gets action buttons; guests get waiting message
-  showHostActions();
-  if (!S.isHost) $('guest-waiting-nr').style.display = '';
+  if (S.isHost) {
+    $('btn-reset').style.display = '';
+    $('btn-edit-participants').style.display = '';
+    $('guest-waiting-nr').style.display = 'none';
+  } else {
+    $('btn-reset').style.display = 'none';
+    $('btn-edit-participants').style.display = 'none';
+    $('guest-waiting-nr').style.display = '';
+  }
   const el=$('result-num'), dur=700, t0=performance.now();
   (function tick(now){
     const p=Math.min((now-t0)/dur,1), e=1-Math.pow(1-p,3);
@@ -646,7 +651,13 @@ function doReset(andBcast) {
   setBanner('New round — enter your next secret number', 'info');
   renderMembers();
   $('guest-waiting-nr').style.display = 'none';
-  showHostActions();
+  if (S.isHost) {
+    $('btn-reset').style.display = '';
+    $('btn-edit-participants').style.display = '';
+  } else {
+    $('btn-reset').style.display = 'none';
+    $('btn-edit-participants').style.display = 'none';
+  }
   if (andBcast) { if(S.isHost) bcast({type:'reset'}); else toHost({type:'reset'}); }
 }
 
@@ -683,7 +694,11 @@ function startHost(name, existingRid) {
     $('role-lbl').textContent='Host';
     $('host-card').style.display='';
     // Heartbeat: ping all guests every 3s so they can detect host disconnect
-    startHeartbeat(S.hostGen);
+    S.heartbeatTimer = setInterval(() => {
+      if (!S.isHost) return;
+      bcast({ type:'ping', gen: S.hostGen });
+      runReaper();;
+    }, 4000);
     // Set hash and show invite link
     history.replaceState(null, '', '#' + rid);
     const inviteUrl = location.href.split('#')[0] + '#' + rid;
@@ -694,7 +709,35 @@ function startHost(name, existingRid) {
   peer.on('connection', conn => {
     const pid=conn.peer; S.guestMap[pid]={ conn };
     conn.on('data',  msg => onHostMsg(msg, pid));
-    conn.on('close', () => onGuestClose(pid));
+    conn.on('close', () => {
+      delete S.guestMap[pid];
+      // If all guests gone, probe whether a new host took over
+      if (Object.keys(S.guestMap).length === 0 && S.isHost) {
+        setTimeout(() => {
+          if (Object.keys(S.guestMap).length === 0 && S.isHost) {
+            probeNewHostGen(S.roomId, S.hostGen + 1, name);
+          }
+        }, 5000);
+      }
+      if (!S.locked) {
+        delete S.members[pid];
+        bcast({ type:'left', id:pid });
+        renderMembers(); updateLockBtn();
+      } else {
+        const hadSubmitted = !!S.colSumsIn[pid];
+        S.lockedIds = S.lockedIds.filter(id => id !== pid);
+        delete S.members[pid];
+        delete S.sharesIn[pid];
+        delete S.colSumsIn[pid];
+        bcast({ type:'left', id:pid });
+        renderMembers();
+        if (!hadSubmitted && Object.keys(S.sharesIn).length > 0) {
+          setTimeout(() => { doReset(true); setBanner('A participant left — please re-enter your numbers', 'warn'); }, 800);
+        } else {
+          checkSumComplete();
+        }
+      }
+    });
   });
   peer.on('disconnected', () => {
     if (!S.isHost || S.peer !== peer) return;
@@ -760,55 +803,7 @@ function probeNewHostGen(roomId, gen, myName) {
   testPeer.on('error', () => testPeer.destroy());
 }
 
-
-function onGuestClose(pid) {
-  delete S.guestMap[pid];
-  if (Object.keys(S.guestMap).length === 0 && S.isHost) {
-    setTimeout(() => {
-      if (Object.keys(S.guestMap).length === 0 && S.isHost)
-        probeNewHostGen(S.roomId, S.hostGen + 1, S.myName);
-    }, 5000);
-  }
-  if (!S.locked) {
-    delete S.members[pid];
-    bcast({ type:'left', id:pid });
-    renderMembers(); updateLockBtn();
-  } else {
-    const hadSubmitted = !!S.colSumsIn[pid];
-    S.lockedIds = S.lockedIds.filter(id => id !== pid);
-    delete S.members[pid]; delete S.sharesIn[pid]; delete S.colSumsIn[pid];
-    bcast({ type:'left', id:pid });
-    renderMembers();
-    if (!hadSubmitted && Object.keys(S.sharesIn).length > 0) {
-      setTimeout(() => { doReset(true); setBanner('A participant left — please re-enter your numbers', 'warn'); }, 800);
-    } else { checkSumComplete(); }
-  }
-}
-
-function startHeartbeat(gen) {
-  if (S.heartbeatTimer) clearInterval(S.heartbeatTimer);
-  S.heartbeatTimer = setInterval(() => {
-    if (!S.isHost) return;
-    bcast({ type:'ping', gen });
-    runReaper();
-  }, 4000);
-}
-
-function claimOrFail(rid, name, peer) {
-  console.log('[claimOrFail] hostConn open?', S.hostConn?.open, 'isValidRoomId:', isValidRoomId(rid));
-  // Don't claim if a slow connection already opened in a parallel probe
-  if (S.hostConn && S.hostConn.open) { console.log('[claimOrFail] already connected, skipping'); return; }
-  if (isValidRoomId(rid)) {
-    try { peer.destroy(); } catch(e){}
-    setConn('Creating room…', '');
-    startHost(name, rid);
-  } else {
-    setConn('Room not found', 'err');
-    $('join-err').textContent = 'Room not found. Check the Room ID.';
-    $('join-err').style.display = '';
-    showScreen('s-welcome'); try { peer.destroy(); } catch(e){}
-  }
-}
+/* ── promote guest to host after host disconnect ── */
 /* ── host election after host disconnect ── */
 // Generation-based host IDs: roomId, roomId_1, roomId_2, ...
 // Each handover increments the generation — no ID reuse, instant claim.
@@ -865,13 +860,44 @@ function promoteToHost(gen) {
     $('role-lbl').textContent = 'Host (promoted)';
     setBanner('You became the host — same Room ID, same invite link!', 'info');
 
-    startHeartbeat(gen);
+    S.heartbeatTimer = setInterval(() => {
+      if (!S.isHost) return;
+      bcast({type:'ping', gen});
+      runReaper();;
+    }, 4000);
     renderMembers(); updateLockBtn();
 
     newPeer.on('connection', conn => {
       const pid = conn.peer; S.guestMap[pid] = {conn};
       conn.on('data',  msg => onHostMsg(msg, pid));
-      conn.on('close', () => onGuestClose(pid));
+      conn.on('close', () => {
+        delete S.guestMap[pid];
+        if (Object.keys(S.guestMap).length === 0 && S.isHost) {
+          setTimeout(() => {
+            if (Object.keys(S.guestMap).length === 0 && S.isHost) {
+              probeNewHostGen(S.roomId, S.hostGen + 1, S.myName);
+            }
+          }, 5000);
+        }
+        if (!S.locked) {
+          delete S.members[pid];
+          bcast({ type:'left', id:pid });
+          renderMembers(); updateLockBtn();
+        } else {
+          const hadSubmitted = !!S.colSumsIn[pid];
+          S.lockedIds = S.lockedIds.filter(id => id !== pid);
+          delete S.members[pid];
+          delete S.sharesIn[pid];
+          delete S.colSumsIn[pid];
+          bcast({ type:'left', id:pid });
+          renderMembers();
+          if (!hadSubmitted && Object.keys(S.sharesIn).length > 0) {
+            setTimeout(() => { doReset(true); setBanner('A participant left — please re-enter your numbers', 'warn'); }, 800);
+          } else {
+            checkSumComplete();
+          }
+        }
+      });
       conn.on('open', () => {
         const snap = Object.fromEntries(
           Object.entries(S.members).map(([id,m]) => [id, {name:m.name, submitted:m.submitted}])
@@ -889,7 +915,7 @@ function promoteToHost(gen) {
       try { newPeer.reconnect(); } catch(e){}
       setTimeout(() => {
         if (!S.isHost || S.peer !== newPeer) return;
-        probeNewHostGen(S.roomId, S.hostGen + 1, S.myName);
+        probeNewHostGen(S.roomId, S.hostGen + 1, name);
       }, 2000);
     }, 1000);
   });
@@ -906,40 +932,43 @@ function promoteToHost(gen) {
 }
 
 function reconnectToNewHost(gen) {
-  console.log('[reconnect] fresh peer, probing from gen', gen);
   S.promotionStarted = false;
   setConn('Reconnecting…', '');
   if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
   const peer = new Peer(undefined, {host:'peerjs.92k.de',port:443,secure:true,path:'/',debug:0}); S.peer = peer;
   peer.on('open', myId => {
     S.myId = myId; S.isHost = false;
-    probeAndJoin(S.roomId, S.myName, peer, 0); // always probe from gen 0
+    probeAndJoin(S.roomId, S.myName, peer, gen);
   });
-  peer.on('error', () => setTimeout(() => reconnectToNewHost(0), 2000));
+  peer.on('error', () => setTimeout(() => reconnectToNewHost(gen), 2000));
 }
 
 /* ── probe host generations to find active host ── */
 function probeAndJoin(rid, name, peer, gen) {
   const targetId = hostPeerIdForGen(rid, gen);
-  console.log('[probe] trying gen', gen, 'targetId:', targetId);
   const conn = peer.connect(targetId, {reliable:true});
   let opened = false;
 
   const timeout = setTimeout(() => {
-    console.log('[probe] timeout gen', gen, 'opened:', opened);
     if (!opened && gen < 20) {
       probeAndJoin(rid, name, peer, gen + 1);
     } else if (!opened) {
-      console.log('[probe] all gens exhausted, calling claimOrFail');
-      claimOrFail(rid, name, peer);
+      if (isValidRoomId(rid)) {
+        // Valid room ID, no host found — claim it and become host
+        try { peer.destroy(); } catch(e){}
+        setConn('Creating room…', '');
+        startHost(name, rid);
+      } else {
+        setConn('Room not found', 'err');
+        $('join-err').textContent = 'Room not found. Check the Room ID.';
+        $('join-err').style.display = '';
+        showScreen('s-welcome'); try { peer.destroy(); } catch(e){}
+      }
     }
-  }, 5000);
+  }, 2000);
 
   conn.on('open', () => {
-    console.log('[probe] conn opened gen', gen);
     opened = true; clearTimeout(timeout);
-    // If a faster parallel probe already connected, discard this one
-    if (S.hostConn && S.hostConn.open && S.hostConn !== conn) { console.log('[probe] discarding slow duplicate conn'); conn.close(); return; }
     S.hostPeerId = targetId; S.hostConn = conn; S.hostGen = gen;
     setConn('Connected', 'ok'); $('role-lbl').textContent = 'Guest';
     conn.send({type:'hello', name});
@@ -951,29 +980,20 @@ function probeAndJoin(rid, name, peer, gen) {
     }, 3000);
     if (S.hostWatchdog) clearTimeout(S.hostWatchdog);
     S.hostWatchdog = setTimeout(() => {
-      console.log('[watchdog] fired — no ping received, promoting');
-      if (S.hostConn && S.hostConn.open) return; // spurious watchdog, host still alive
       setConn('Host disconnected — trying to become host…', 'err');
       if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
       attemptHostPromotion();
-    }, 12000); // longer initial timeout — resets to 7s after first ping
+    }, 7000);
   });
 
   conn.on('data', msg => onGuestMsg(msg));
 
   conn.on('close', () => {
-    console.log('[probe] conn closed, opened:', opened, 'gen:', gen);
     if (!opened) return;
     clearTimeout(timeout);
-    if (S.hostConn !== conn) return; // already reconnected elsewhere
-    S.hostConn = null;
-    setConn('Reconnecting…', '');
-    // DataConnection dropped but host may still be alive — reconnect with fresh peer
-    if (S.hostWatchdog) { clearTimeout(S.hostWatchdog); S.hostWatchdog = null; }
-    setTimeout(() => {
-      if (S.hostConn && S.hostConn.open) return;
-      if (!S.isHost) reconnectToNewHost(0); // fresh peer, probe from gen 0
-    }, 1500);
+    setConn('Host disconnected — trying to become host…', 'err');
+    if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
+    attemptHostPromotion();
   });
 
   conn.on('error', () => {
@@ -981,7 +1001,17 @@ function probeAndJoin(rid, name, peer, gen) {
     if (!opened && gen < 20) {
       probeAndJoin(rid, name, peer, gen + 1);
     } else if (!opened) {
-      claimOrFail(rid, name, peer);
+      if (isValidRoomId(rid)) {
+        // Valid room ID, no host found — claim it and become host
+        try { peer.destroy(); } catch(e){}
+        setConn('Creating room…', '');
+        startHost(name, rid);
+      } else {
+        setConn('Room not found', 'err');
+        $('join-err').textContent = 'Room not found. Check the Room ID.';
+        $('join-err').style.display = '';
+        showScreen('s-welcome'); try { peer.destroy(); } catch(e){}
+      }
     }
   });
 }

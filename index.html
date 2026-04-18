@@ -15,6 +15,7 @@
       --primary:#01696f;--primary-h:#0c4e54;--primary-hl:#cedcd8;
       --success:#437a22;--success-hl:#d4dfcc;
       --error:#a12c7b;--error-hl:#e0ced7;
+      --warn:#7a5c00;--warn-hl:#fdf3d0;
       --sh-md:0 4px 12px oklch(0.2 0.01 80/.08);--sh-lg:0 12px 32px oklch(0.2 0.01 80/.12);
       --tr:180ms cubic-bezier(0.16,1,0.3,1);
       --r-sm:.375rem;--r-md:.5rem;--r-lg:.75rem;--r-2xl:1.5rem;--r-full:9999px;
@@ -25,6 +26,7 @@
       --primary:#4f98a3;--primary-h:#6db8c4;--primary-hl:#1e3538;
       --success:#6daa45;--success-hl:#233318;
       --error:#d163a7;--error-hl:#3a1f30;
+      --warn:#e6b800;--warn-hl:#3a2f00;
       --sh-md:0 4px 12px oklch(0 0 0/.4);--sh-lg:0 12px 32px oklch(0 0 0/.5);
     }
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -47,6 +49,7 @@
     .badge{display:inline-flex;align-items:center;gap:.375rem;font-size:.75rem;font-weight:500;padding:.25rem .625rem;border-radius:var(--r-full);background:var(--surfoff);color:var(--muted);transition:background var(--tr),color var(--tr)}
     .badge.ok{background:var(--success-hl);color:var(--success)}
     .badge.err{background:var(--error-hl);color:var(--error)}
+    .badge.warn{background:var(--warn-hl);color:var(--warn)}
     .pulse{width:6px;height:6px;border-radius:var(--r-full);background:currentColor;animation:pulse 1.8s ease-in-out infinite}
     @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.85)}}
     .lbl{font-size:.8125rem;font-weight:500;color:var(--muted);margin-bottom:.375rem;display:block}
@@ -474,6 +477,7 @@ function onGuestMsg(msg) {
     $('num-hint').innerHTML='Range: −1,000,000,000 to +1,000,000,000 · up to 2 decimal places.<br>Your number is <strong>never transmitted</strong> — only random fragments are exchanged.';
     $('result-wrap').style.display='none';
     $('num-card').style.display=''; $('num-card').style.opacity=''; $('num-card').style.pointerEvents='';
+    setConn('🔒 Locked · ' + S.lockedIds.length + ' participants', 'warn');
     setBanner('Room locked — enter your secret number below', 'info');
 
   } else if (msg.type === 'your_share') {
@@ -544,6 +548,7 @@ function submitNumber() {
 function showResult(sum) {
   if (S.resultShown) return;
   S.resultShown = true;
+  setConn('✓ Sum ready', 'ok');
   $('result-wrap').style.display = '';
   $('num-card').style.opacity = '.4';
   $('num-card').style.pointerEvents = 'none';
@@ -581,6 +586,7 @@ function lockRoom() {
   renderMembers();
   $('num-card').style.display  = '';
   $('host-card').style.display = 'none';
+  setConn('🔒 Locked · ' + S.lockedIds.length + ' participants', 'warn');
   setBanner('Room locked — enter your secret number below', 'info');
   // Host can always start a new round or edit participants once locked
   $('btn-reset').style.display = '';
@@ -600,6 +606,7 @@ function showHostActions() {
 function doReset(andBcast) {
   // Keep S.locked=true and S.lockedIds intact — same participants, new round
   S.resultShown=false;
+  setConn('🔒 Locked · ' + S.lockedIds.length + ' participants', 'warn');
   S.sharesIn={}; S.colSumsIn={};
   Object.values(S.members).forEach(m => m.submitted=false);
   $('num-inp').value=''; $('num-inp').disabled=false; $('btn-submit').disabled=false;
@@ -628,6 +635,7 @@ function unlockForEditing() {
   $('result-wrap').style.display='none';
   $('num-card').style.display='none'; $('num-card').style.opacity=''; $('num-card').style.pointerEvents='';
   $('host-card').style.display='';
+  setConn('Room open · waiting for guests', 'ok');
   // Keep New round visible; hide Edit participants (already in edit mode)
   $('btn-reset').style.display = '';
   $('btn-edit-participants').style.display = 'none';

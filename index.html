@@ -731,6 +731,23 @@ function startHost(name, existingRid) {
       }
     });
   });
+  peer.on('disconnected', () => {
+    if (!S.isHost || S.peer !== peer) return;
+    setConn('Reconnecting…', '');
+    setTimeout(() => {
+      if (!S.peer || S.peer !== peer) return;
+      try { peer.reconnect(); } catch(e){}
+    }, 1000);
+  });
+
+  peer.on('open', id => {
+    // Re-open after reconnect — check if a new host took over while we were gone
+    if (S.myId && S.myId === id) {
+      // Already initialized (this is a reconnect, not first open)
+      probeNewHostGen(S.roomId, S.hostGen + 1, name);
+    }
+  });
+
   peer.on('error', e => {
     if (e.type==='unavailable-id') {
       peer.destroy();
@@ -738,6 +755,34 @@ function startHost(name, existingRid) {
       else { startHost(name); }
     } else setConn('Connection error','err');
   });
+}
+
+/* ── host checks if a new host took over while disconnected ── */
+function probeNewHostGen(roomId, gen, name) {
+  if (gen > 20) return; // nobody took over
+  const testPeer = new Peer(undefined, {host:'peerjs.92k.de',port:443,secure:true,path:'/',debug:0});
+  testPeer.on('open', () => {
+    const conn = testPeer.connect(hostPeerIdForGen(roomId, gen), {reliable:true});
+    let found = false;
+    const t = setTimeout(() => {
+      testPeer.destroy();
+      if (!found) return; // still host, do nothing
+    }, 2500);
+    conn.on('open', () => {
+      found = true;
+      clearTimeout(t);
+      testPeer.destroy();
+      // New host found — downgrade self to guest
+      setConn('New host detected — rejoining as guest…', '');
+      if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
+      S.isHost = false;
+      S.guestMap = {};
+      if (S.heartbeatTimer) { clearInterval(S.heartbeatTimer); S.heartbeatTimer = null; }
+      startGuest(name, roomId);
+    });
+    conn.on('error', () => { clearTimeout(t); testPeer.destroy(); });
+  });
+  testPeer.on('error', () => testPeer.destroy());
 }
 
 /* ── promote guest to host after host disconnect ── */
@@ -837,10 +882,18 @@ function promoteToHost(gen) {
     });
   });
 
+  newPeer.on('disconnected', () => {
+    if (!S.isHost || S.peer !== newPeer) return;
+    setConn('Reconnecting…', '');
+    setTimeout(() => {
+      if (!S.peer || S.peer !== newPeer) return;
+      try { newPeer.reconnect(); } catch(e){}
+    }, 1000);
+  });
+
   newPeer.on('error', e => {
     newPeer.destroy();
     if (e.type === 'unavailable-id') {
-      // Another guest already claimed this gen — they won the election; reconnect as guest
       setConn('Reconnecting to new host…', '');
       setTimeout(() => reconnectToNewHost(gen), 1000);
     } else {

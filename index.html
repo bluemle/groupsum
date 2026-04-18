@@ -999,17 +999,9 @@ function probeAndJoin(rid, name, peer, gen) {
     clearTimeout(timeout);
     if (S.hostConn !== conn) return;
     S.hostConn = null;
-    setConn('Reconnecting…', '');
-    if (S.hostWatchdog) { clearTimeout(S.hostWatchdog); S.hostWatchdog = null; }
-    setTimeout(() => {
-      if (S.isHost || (S.hostConn && S.hostConn.open)) return;
-      console.log('[probe] reconnecting with fresh peer');
-      if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
-      const freshPeer = new Peer(undefined, {host:'0.peerjs.com',port:443,secure:true,path:'/',debug:0,config:{iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:global.stun.twilio.com:3478'}]}});
-      S.peer = freshPeer;
-      freshPeer.on('open', myId => { S.myId = myId; probeAndJoin(S.roomId, S.myName, freshPeer, 0); });
-      freshPeer.on('error', () => { if (!S.isHost) attemptHostPromotion(); });
-    }, 3000);
+    setConn('Host disconnected — trying to become host…', 'err');
+    if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
+    attemptHostPromotion();
   });
 
   conn.on('error', () => {

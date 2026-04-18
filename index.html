@@ -361,7 +361,7 @@ function onHostMsg(msg, fromId) {
     const snap = Object.fromEntries(
       Object.entries(S.members).map(([id,m]) => [id, {name:m.name, submitted:m.submitted}])
     );
-    toGuest(fromId, { type:'welcome', myId:fromId, members:snap });
+    toGuest(fromId, { type:'welcome', myId:fromId, members:snap, locked:S.locked, lockedIds:S.lockedIds });
     bcast({ type:'joined', id:fromId, name:msg.name }, fromId);
     renderMembers(); updateLockBtn();
 
@@ -424,6 +424,12 @@ function onGuestMsg(msg) {
     Object.entries(msg.members).forEach(([id,m]) =>
       S.members[id] = { name:m.name, submitted:m.submitted }
     );
+    if (msg.locked && msg.lockedIds) {
+      S.locked = true;
+      S.lockedIds = msg.lockedIds;
+      $('num-card').style.display = '';
+      setBanner('Room locked — enter your secret number below', 'info');
+    }
     renderMembers();
 
   } else if (msg.type === 'joined') {
@@ -726,7 +732,7 @@ function promoteToHost(gen) {
         const snap = Object.fromEntries(
           Object.entries(S.members).map(([id,m]) => [id, {name:m.name, submitted:m.submitted}])
         );
-        conn.send({type:'welcome', myId:pid, members:snap, hostGen:gen});
+        conn.send({type:'welcome', myId:pid, members:snap, hostGen:gen, locked:S.locked, lockedIds:S.lockedIds});
       });
     });
   });

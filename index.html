@@ -665,14 +665,13 @@ function electNewHost() {
 function attemptHostPromotion() {
   if (S.promotionStarted) return;
   S.promotionStarted = true;
-  const elected = electNewHost();
-  if (!elected) { setConn('No participants left', 'err'); return; }
-  const newGen = (S.hostGen || 0) + 1;
-  if (elected === S.myId) {
+  // Random jitter: first guest to fire wins the Peer ID; others get unavailable-id → reconnect
+  const jitter = Math.random() * 1500;
+  setTimeout(() => {
+    const newGen = (S.hostGen || 0) + 1;
+    // Every guest optimistically tries to become host — loser handles unavailable-id gracefully
     promoteToHost(newGen);
-  } else {
-    reconnectToNewHost(newGen);
-  }
+  }, jitter);
 }
 
 function promoteToHost(gen) {

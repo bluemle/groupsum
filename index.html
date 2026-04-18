@@ -1041,12 +1041,17 @@ function startGuest(name, rid) {
 }
 
 /* ── button wiring ── */
-$('btn-create').addEventListener('click', () => startHost($('host-name').value.trim() || 'Host'));
+$('btn-create').addEventListener('click', () => {
+  const name = $('host-name').value.trim();
+  if (!name) { $('host-name').focus(); $('host-name').placeholder = 'Name is required'; return; }
+  startHost(name);
+});
 $('host-name').addEventListener('keydown', e => { if (e.key==='Enter') $('btn-create').click(); });
 $('btn-join').addEventListener('click', () => {
   const rid  = $('join-rid').value.trim().toUpperCase();
-  const name = $('join-name').value.trim() || 'Guest';
-  if (!rid) { $('join-err').textContent='Please enter a Room ID.'; $('join-err').style.display=''; return; }
+  const name = $('join-name').value.trim();
+  if (!name) { $('join-name').focus(); $('join-err').textContent='Please enter your name.'; $('join-err').style.display=''; return; }
+  if (!rid) { $('join-rid').focus(); $('join-err').textContent='Please enter a Room ID.'; $('join-err').style.display=''; return; }
   $('join-err').style.display='none';
   startGuest(name, rid);
 });

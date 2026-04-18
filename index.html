@@ -660,8 +660,32 @@ function startHost(name) {
     $('host-card').style.display='';
     // Heartbeat: ping all guests every 3s so they can detect host disconnect
     S.heartbeatTimer = setInterval(() => {
-      if (S.isHost) bcast({ type:'ping' });
-    }, 3000);
+      if (!S.isHost) return;
+      bcast({ type:'ping', gen: S.hostGen });
+      const now = Date.now();
+      Object.keys(S.guestMap).forEach(pid => {
+        if ((S.lastSeen[pid] || 0) && now - S.lastSeen[pid] > 8000) {
+          const g = S.guestMap[pid];
+          if (g?.conn) { try { g.conn.close(); } catch(e){} }
+          delete S.guestMap[pid];
+          delete S.lastSeen[pid];
+          S.lockedIds = S.lockedIds.filter(id => id !== pid);
+          delete S.members[pid];
+          delete S.sharesIn[pid];
+          delete S.colSumsIn[pid];
+          bcast({ type:'left', id:pid });
+          renderMembers(); updateLockBtn();
+          const done = Object.keys(S.colSumsIn).length;
+          const total = S.lockedIds.length;
+          if (S.locked && total > 0 && done >= total && !S.resultShown) {
+            const globalScaled = Object.values(S.colSumsIn).reduce((a,b) => a+b, 0);
+            const result = Math.round(globalScaled) / SCALE;
+            bcast({ type:'result', sum:result });
+            showResult(result);
+          }
+        }
+      });
+    }, 4000);
     // Set hash and show invite link
     history.replaceState(null, '', '#' + rid);
     const inviteUrl = location.href.split('#')[0] + '#' + rid;
@@ -672,10 +696,28 @@ function startHost(name) {
   peer.on('connection', conn => {
     const pid=conn.peer; S.guestMap[pid]={ conn };
     conn.on('data',  msg => onHostMsg(msg, pid));
-    conn.on('close', ()  => {
+    conn.on('close', () => {
       delete S.guestMap[pid];
-      if (!S.locked) { delete S.members[pid]; renderMembers(); updateLockBtn(); }
-      // After lock: keep member entry in S.members (lockedIds already frozen)
+      if (!S.locked) {
+        delete S.members[pid];
+        bcast({ type:'left', id:pid });
+        renderMembers(); updateLockBtn();
+      } else {
+        S.lockedIds = S.lockedIds.filter(id => id !== pid);
+        delete S.members[pid];
+        delete S.sharesIn[pid];
+        delete S.colSumsIn[pid];
+        bcast({ type:'left', id:pid });
+        renderMembers();
+        const done = Object.keys(S.colSumsIn).length;
+        const total = S.lockedIds.length;
+        if (total > 0 && done >= total && !S.resultShown) {
+          const globalScaled = Object.values(S.colSumsIn).reduce((a,b) => a+b, 0);
+          const result = Math.round(globalScaled) / SCALE;
+          bcast({ type:'result', sum:result });
+          showResult(result);
+        }
+      }
     });
   });
   peer.on('error', e => {

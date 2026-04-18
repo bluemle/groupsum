@@ -298,6 +298,8 @@ const S = {
   heartbeatTimer:null,  // host: interval sending pings
   hostWatchdog:null,    // guest: timeout detecting host gone
   promotionStarted:false,
+  guestHeartbeat:null,      // guest: interval sending heartbeats to host
+  lastSeen:{},              // host: peerId → timestamp of last heartbeat
   hostPeerId:null,      // actual PeerJS peer ID of current host (may differ from roomId)
   hostGen:0,            // generation counter — incremented on each host handover
 };
@@ -368,6 +370,7 @@ function onHostMsg(msg, fromId) {
       delete S.colSumsIn[evictId];
     }
     const wasSubmitted = staleId ? false : false; // reset — they need to resubmit
+    S.lastSeen[fromId] = Date.now();
     S.members[fromId] = { name:msg.name, submitted:false };
     const snap = Object.fromEntries(
       Object.entries(S.members).map(([id,m]) => [id, {name:m.name, submitted:m.submitted}])
@@ -411,6 +414,8 @@ function onHostMsg(msg, fromId) {
 
   } else if (msg.type === 'reset') {
     doReset(false); bcast({ type:'reset' });
+  } else if (msg.type === 'heartbeat') {
+    S.lastSeen[fromId] = Date.now();
   }
 }
 
@@ -706,6 +711,7 @@ function promoteToHost(gen) {
     S.sharesIn = {}; S.colSumsIn = {}; S.resultShown = false;
     if (S.hostWatchdog)   { clearTimeout(S.hostWatchdog);   S.hostWatchdog = null; }
     if (S.heartbeatTimer) { clearInterval(S.heartbeatTimer); S.heartbeatTimer = null; }
+    if (S.guestHeartbeat) { clearInterval(S.guestHeartbeat); S.guestHeartbeat = null; }
 
     // Fix member list
     const oldMyId = Object.keys(S.members).find(id => id !== S.hostPeerId && S.members[id]?.name === S.myName);
@@ -730,8 +736,34 @@ function promoteToHost(gen) {
     setBanner('You became the host — same Room ID, same invite link!', 'info');
 
     S.heartbeatTimer = setInterval(() => {
-      if (S.isHost) bcast({type:'ping', gen});
-    }, 3000);
+      if (!S.isHost) return;
+      bcast({type:'ping', gen});
+      // Reaper: evict guests silent for >8s
+      const now = Date.now();
+      Object.keys(S.guestMap).forEach(pid => {
+        if ((S.lastSeen[pid] || 0) && now - S.lastSeen[pid] > 8000) {
+          const g = S.guestMap[pid];
+          if (g?.conn) { try { g.conn.close(); } catch(e){} }
+          delete S.guestMap[pid];
+          delete S.lastSeen[pid];
+          S.lockedIds = S.lockedIds.filter(id => id !== pid);
+          delete S.members[pid];
+          delete S.sharesIn[pid];
+          delete S.colSumsIn[pid];
+          bcast({ type:'left', id:pid });
+          renderMembers(); updateLockBtn();
+          // Recheck sum completion
+          const done = Object.keys(S.colSumsIn).length;
+          const total = S.lockedIds.length;
+          if (S.locked && total > 0 && done >= total && !S.resultShown) {
+            const globalScaled = Object.values(S.colSumsIn).reduce((a,b) => a+b, 0);
+            const result = Math.round(globalScaled) / SCALE;
+            bcast({ type:'result', sum:result });
+            showResult(result);
+          }
+        }
+      });
+    }, 4000);
     renderMembers(); updateLockBtn();
 
     newPeer.on('connection', conn => {
@@ -818,6 +850,12 @@ function probeAndJoin(rid, name, peer, gen) {
     S.hostPeerId = targetId; S.hostConn = conn; S.hostGen = gen;
     setConn('Connected', 'ok'); $('role-lbl').textContent = 'Guest';
     conn.send({type:'hello', name});
+    // Guest heartbeat → host can detect silent disconnects
+    if (S.guestHeartbeat) clearInterval(S.guestHeartbeat);
+    S.guestHeartbeat = setInterval(() => {
+      if (S.hostConn && S.hostConn.open) S.hostConn.send({type:'heartbeat'});
+      else { clearInterval(S.guestHeartbeat); S.guestHeartbeat = null; }
+    }, 3000);
     if (S.hostWatchdog) clearTimeout(S.hostWatchdog);
     S.hostWatchdog = setTimeout(() => {
       setConn('Host disconnected — trying to become host…', 'err');

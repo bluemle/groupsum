@@ -315,6 +315,7 @@ probeNewHostGen(roomId, gen, name)  // probe if new host exists, demote if found
 2. **Deduplication** — `sharesIn` and `colSumsIn` are keyed objects; duplicate messages are silently dropped.
 3. **Messages from non-locked peers** are dropped after lock.
 4. **Reconnecting locked participant** — matched by name; stale entry evicted, new peer ID takes over.
+5. **Unlocked joins** — guests with identical names (e.g. default "Guest") do not overwrite each other.
 5. **Race: two guests claim same empty room** — loser gets `unavailable-id` → rejoins as guest.
 6. **Corrupt math on departure** — if unsubmitted guest leaves mid-round, full reset is triggered.
 7. **Host gen scope** — promoted host uses `S.myName` (not closed-over `name`) in async callbacks.

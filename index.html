@@ -411,6 +411,7 @@ function onHostMsg(msg, fromId) {
       Object.entries(S.members).map(([id,m]) => [id, {name:m.name, submitted:m.submitted}])
     );
     toGuest(fromId, { type:'welcome', myId:fromId, members:snap, locked:S.locked, lockedIds:S.lockedIds });
+    toGuest(fromId, { type:'ping', gen: S.hostGen }); // immediate ping resets guest watchdog
     if (!S.locked) bcast({ type:'joined', id:fromId, name:msg.name }, fromId);
     renderMembers(); updateLockBtn();
 
@@ -991,9 +992,19 @@ function probeAndJoin(rid, name, peer, gen) {
   conn.on('close', () => {
     if (!opened) return;
     clearTimeout(timeout);
-    setConn('Host disconnected — trying to become host…', 'err');
-    if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
-    attemptHostPromotion();
+    if (S.hostConn !== conn) return;
+    S.hostConn = null;
+    setConn('Reconnecting…', '');
+    if (S.hostWatchdog) { clearTimeout(S.hostWatchdog); S.hostWatchdog = null; }
+    // Wait 3s then reconnect with fresh peer — avoids false promotion on brief drop
+    setTimeout(() => {
+      if (S.isHost || (S.hostConn && S.hostConn.open)) return;
+      if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
+      const freshPeer = new Peer(undefined, {host:'peerjs.92k.de',port:443,secure:true,path:'/',debug:0});
+      S.peer = freshPeer;
+      freshPeer.on('open', myId => { S.myId = myId; probeAndJoin(S.roomId, S.myName, freshPeer, 0); });
+      freshPeer.on('error', () => { if (!S.isHost) attemptHostPromotion(); });
+    }, 3000);
   });
 
   conn.on('error', () => {

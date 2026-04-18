@@ -735,17 +735,14 @@ function startHost(name, existingRid) {
     if (!S.isHost || S.peer !== peer) return;
     setConn('Reconnecting…', '');
     setTimeout(() => {
-      if (!S.peer || S.peer !== peer) return;
+      if (!S.isHost || S.peer !== peer) return;
       try { peer.reconnect(); } catch(e){}
+      // After re-establishing signalling, check if a new host took over
+      setTimeout(() => {
+        if (!S.isHost || S.peer !== peer) return;
+        probeNewHostGen(S.roomId, S.hostGen + 1, name);
+      }, 2000);
     }, 1000);
-  });
-
-  peer.on('open', id => {
-    // Re-open after reconnect — check if a new host took over while we were gone
-    if (S.myId && S.myId === id) {
-      // Already initialized (this is a reconnect, not first open)
-      probeNewHostGen(S.roomId, S.hostGen + 1, name);
-    }
   });
 
   peer.on('error', e => {
@@ -886,8 +883,12 @@ function promoteToHost(gen) {
     if (!S.isHost || S.peer !== newPeer) return;
     setConn('Reconnecting…', '');
     setTimeout(() => {
-      if (!S.peer || S.peer !== newPeer) return;
+      if (!S.isHost || S.peer !== newPeer) return;
       try { newPeer.reconnect(); } catch(e){}
+      setTimeout(() => {
+        if (!S.isHost || S.peer !== newPeer) return;
+        probeNewHostGen(S.roomId, S.hostGen + 1, name);
+      }, 2000);
     }, 1000);
   });
 

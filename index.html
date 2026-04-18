@@ -780,9 +780,22 @@ function probeNewHostGen(roomId, gen, myName) {
       // New host found — downgrade self to guest
       setConn('New host detected — rejoining as guest…', '');
       if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
-      S.isHost = false;
-      S.guestMap = {};
       if (S.heartbeatTimer) { clearInterval(S.heartbeatTimer); S.heartbeatTimer = null; }
+      // Reset host UI elements before re-joining as guest
+      $('host-card').style.display    = 'none';
+      $('share-link-box').style.display = 'none';
+      $('btn-reset').style.display    = 'none';
+      $('btn-edit-participants').style.display = 'none';
+      $('num-card').style.display     = 'none';
+      $('result-wrap').style.display  = 'none';
+      $('num-inp').value = ''; $('num-inp').disabled = false;
+      $('btn-submit').disabled = false;
+      $('guest-waiting-nr').style.display = 'none';
+      $('role-lbl').textContent = 'Guest';
+      // Reset state
+      S.isHost = false; S.guestMap = {}; S.members = {};
+      S.locked = false; S.lockedIds = []; S.sharesIn = {}; S.colSumsIn = {};
+      S.resultShown = false; S.promotionStarted = false;
       startGuest(myName || S.myName, roomId);
     });
     conn.on('error', () => { clearTimeout(t); testPeer.destroy(); });

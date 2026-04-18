@@ -984,6 +984,11 @@ function probeAndJoin(rid, name, peer, gen) {
 
 /* ── start as guest ── */
 function startGuest(name, rid) {
+  if (!isValidRoomId(rid)) {
+    $('join-err').textContent = 'Invalid Room ID. Must be 6 characters (letters and numbers).';
+    $('join-err').style.display = '';
+    return;
+  }
   S.myName=name; S.isHost=false; S.roomId=rid;
   history.replaceState(null, '', location.pathname);
   showScreen('s-room'); setConn('Connecting…');

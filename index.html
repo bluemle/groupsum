@@ -687,7 +687,13 @@ function startHost(name, existingRid) {
   S.myName=name; S.isHost=true;
   const rid = existingRid || genId(); S.roomId=rid;
   showScreen('s-room'); setConn('Starting…');
-  const peer = new Peer(rid, {host:'0.peerjs.com',port:443,secure:true,path:'/',debug:0,config:{iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:global.stun.twilio.com:3478'}]}}); S.peer=peer;
+  const peer = new Peer(rid, {host:'0.peerjs.com',port:443,secure:true,path:'/',debug:0,config:{iceServers:[
+      {urls:'stun:stun.l.google.com:19302'},
+      {urls:'stun:stun1.l.google.com:19302'},
+      {urls:'turn:openrelay.metered.ca:80',username:'openrelayproject',credential:'openrelayproject'},
+      {urls:'turn:openrelay.metered.ca:443',username:'openrelayproject',credential:'openrelayproject'},
+      {urls:'turn:openrelay.metered.ca:443?transport=tcp',username:'openrelayproject',credential:'openrelayproject'}
+    ]}}); S.peer=peer;
   peer.on('open', id => {
     S.myId=id; S.hostPeerId=id; S.hostGen=0;
     S.members[id]={ name, submitted:false };
@@ -769,7 +775,13 @@ function startHost(name, existingRid) {
 /* ── host checks if a new host took over while disconnected ── */
 function probeNewHostGen(roomId, gen, myName) {
   if (gen > 20) return; // nobody took over
-  const testPeer = new Peer(undefined, {host:'0.peerjs.com',port:443,secure:true,path:'/',debug:0,config:{iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:global.stun.twilio.com:3478'}]}});
+  const testPeer = new Peer(undefined, {host:'0.peerjs.com',port:443,secure:true,path:'/',debug:0,config:{iceServers:[
+      {urls:'stun:stun.l.google.com:19302'},
+      {urls:'stun:stun1.l.google.com:19302'},
+      {urls:'turn:openrelay.metered.ca:80',username:'openrelayproject',credential:'openrelayproject'},
+      {urls:'turn:openrelay.metered.ca:443',username:'openrelayproject',credential:'openrelayproject'},
+      {urls:'turn:openrelay.metered.ca:443?transport=tcp',username:'openrelayproject',credential:'openrelayproject'}
+    ]}});
   testPeer.on('open', () => {
     const conn = testPeer.connect(hostPeerIdForGen(roomId, gen), {reliable:true});
     let found = false;
@@ -830,7 +842,13 @@ function attemptHostPromotion() {
 function promoteToHost(gen) {
   const newPeerId = hostPeerIdForGen(S.roomId, gen);
   setConn('Becoming host…', '');
-  const newPeer = new Peer(newPeerId, {host:'0.peerjs.com',port:443,secure:true,path:'/',debug:0,config:{iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:global.stun.twilio.com:3478'}]}});
+  const newPeer = new Peer(newPeerId, {host:'0.peerjs.com',port:443,secure:true,path:'/',debug:0,config:{iceServers:[
+      {urls:'stun:stun.l.google.com:19302'},
+      {urls:'stun:stun1.l.google.com:19302'},
+      {urls:'turn:openrelay.metered.ca:80',username:'openrelayproject',credential:'openrelayproject'},
+      {urls:'turn:openrelay.metered.ca:443',username:'openrelayproject',credential:'openrelayproject'},
+      {urls:'turn:openrelay.metered.ca:443?transport=tcp',username:'openrelayproject',credential:'openrelayproject'}
+    ]}});
 
   newPeer.on('open', peerId => {
     if (S.peer) { try { S.peer.destroy(); } catch(e){} }
@@ -939,7 +957,13 @@ function reconnectToNewHost(gen) {
   S.promotionStarted = false;
   setConn('Reconnecting…', '');
   if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
-  const peer = new Peer(undefined, {host:'0.peerjs.com',port:443,secure:true,path:'/',debug:0,config:{iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:global.stun.twilio.com:3478'}]}}); S.peer = peer;
+  const peer = new Peer(undefined, {host:'0.peerjs.com',port:443,secure:true,path:'/',debug:0,config:{iceServers:[
+      {urls:'stun:stun.l.google.com:19302'},
+      {urls:'stun:stun1.l.google.com:19302'},
+      {urls:'turn:openrelay.metered.ca:80',username:'openrelayproject',credential:'openrelayproject'},
+      {urls:'turn:openrelay.metered.ca:443',username:'openrelayproject',credential:'openrelayproject'},
+      {urls:'turn:openrelay.metered.ca:443?transport=tcp',username:'openrelayproject',credential:'openrelayproject'}
+    ]}}); S.peer = peer;
   peer.on('open', myId => {
     S.myId = myId; S.isHost = false;
     probeAndJoin(S.roomId, S.myName, peer, gen);
@@ -1034,7 +1058,13 @@ function startGuest(name, rid) {
   S.myName=name; S.isHost=false; S.roomId=rid;
   history.replaceState(null, '', location.pathname);
   showScreen('s-room'); setConn('Connecting…');
-  const peer = new Peer(undefined, {host:'0.peerjs.com',port:443,secure:true,path:'/',debug:0,config:{iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:global.stun.twilio.com:3478'}]}}); S.peer=peer;
+  const peer = new Peer(undefined, {host:'0.peerjs.com',port:443,secure:true,path:'/',debug:0,config:{iceServers:[
+      {urls:'stun:stun.l.google.com:19302'},
+      {urls:'stun:stun1.l.google.com:19302'},
+      {urls:'turn:openrelay.metered.ca:80',username:'openrelayproject',credential:'openrelayproject'},
+      {urls:'turn:openrelay.metered.ca:443',username:'openrelayproject',credential:'openrelayproject'},
+      {urls:'turn:openrelay.metered.ca:443?transport=tcp',username:'openrelayproject',credential:'openrelayproject'}
+    ]}}); S.peer=peer;
   peer.on('open', myId => {
     S.myId=myId;
     probeAndJoin(rid, name, peer, 0);

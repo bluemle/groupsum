@@ -411,6 +411,7 @@ function onHostMsg(msg, fromId) {
       Object.entries(S.members).map(([id,m]) => [id, {name:m.name, submitted:m.submitted}])
     );
     toGuest(fromId, { type:'welcome', myId:fromId, members:snap, locked:S.locked, lockedIds:S.lockedIds });
+    toGuest(fromId, { type:'ping', gen: S.hostGen }); // immediate ping so guest watchdog doesn't fire prematurely
     if (!S.locked) bcast({ type:'joined', id:fromId, name:msg.name }, fromId);
     renderMembers(); updateLockBtn();
 
@@ -942,7 +943,7 @@ function probeAndJoin(rid, name, peer, gen) {
       setConn('Host disconnected — trying to become host…', 'err');
       if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
       attemptHostPromotion();
-    }, 7000);
+    }, 12000); // longer initial timeout — resets to 7s after first ping
   });
 
   conn.on('data', msg => onGuestMsg(msg));

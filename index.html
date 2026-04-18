@@ -249,6 +249,9 @@ function genId() {
   const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   return Array.from({length:6}, () => c[Math.floor(Math.random()*c.length)]).join('');
 }
+function isValidRoomId(rid) {
+  return /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/.test(rid);
+}
 function showScreen(id) {
   ['s-welcome','s-room'].forEach(s => $(s).classList.toggle('active', s===id));
   if (id === 's-welcome') {
@@ -654,9 +657,9 @@ function unlockForEditing() {
 }
 
 /* ── start as host ── */
-function startHost(name) {
+function startHost(name, existingRid) {
   S.myName=name; S.isHost=true;
-  const rid=genId(); S.roomId=rid;
+  const rid = existingRid || genId(); S.roomId=rid;
   showScreen('s-room'); setConn('Starting…');
   const peer = new Peer(rid, {host:'peerjs.92k.de',port:443,secure:true,path:'/',debug:0}); S.peer=peer;
   peer.on('open', id => {
@@ -729,8 +732,15 @@ function startHost(name) {
     });
   });
   peer.on('error', e => {
-    if (e.type==='unavailable-id') { peer.destroy(); startHost(name); }
-    else setConn('Connection error','err');
+    if (e.type==='unavailable-id') {
+      peer.destroy();
+      if (existingRid) {
+        // Someone just claimed it — join as guest
+        startGuest(name, existingRid);
+      } else {
+        startHost(name);
+      }
+    } else setConn('Connection error','err');
   });
 }
 
@@ -901,10 +911,17 @@ function probeAndJoin(rid, name, peer, gen) {
     if (!opened && gen < 20) {
       probeAndJoin(rid, name, peer, gen + 1);
     } else if (!opened) {
-      setConn('Room not found', 'err');
-      $('join-err').textContent = 'Room not found. Check the Room ID.';
-      $('join-err').style.display = '';
-      showScreen('s-welcome'); try { peer.destroy(); } catch(e){}
+      if (isValidRoomId(rid)) {
+        // Valid room ID but no host found — claim it and become host
+        try { peer.destroy(); } catch(e){}
+        setConn('Creating room…', '');
+        startHost(name, rid);
+      } else {
+        setConn('Room not found', 'err');
+        $('join-err').textContent = 'Room not found. Check the Room ID.';
+        $('join-err').style.display = '';
+        showScreen('s-welcome'); try { peer.destroy(); } catch(e){}
+      }
     }
   }, 2000);
 
@@ -942,10 +959,17 @@ function probeAndJoin(rid, name, peer, gen) {
     if (!opened && gen < 20) {
       probeAndJoin(rid, name, peer, gen + 1);
     } else if (!opened) {
-      setConn('Room not found', 'err');
-      $('join-err').textContent = 'Room not found. Check the Room ID.';
-      $('join-err').style.display = '';
-      showScreen('s-welcome'); try { peer.destroy(); } catch(e){}
+      if (isValidRoomId(rid)) {
+        // Valid room ID but no host found — claim it and become host
+        try { peer.destroy(); } catch(e){}
+        setConn('Creating room…', '');
+        startHost(name, rid);
+      } else {
+        setConn('Room not found', 'err');
+        $('join-err').textContent = 'Room not found. Check the Room ID.';
+        $('join-err').style.display = '';
+        showScreen('s-welcome'); try { peer.destroy(); } catch(e){}
+      }
     }
   });
 }

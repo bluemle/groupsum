@@ -906,15 +906,16 @@ function promoteToHost(gen) {
 }
 
 function reconnectToNewHost(gen) {
+  console.log('[reconnect] fresh peer, probing from gen', gen);
   S.promotionStarted = false;
   setConn('Reconnecting…', '');
   if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
   const peer = new Peer(undefined, {host:'peerjs.92k.de',port:443,secure:true,path:'/',debug:0}); S.peer = peer;
   peer.on('open', myId => {
     S.myId = myId; S.isHost = false;
-    probeAndJoin(S.roomId, S.myName, peer, gen);
+    probeAndJoin(S.roomId, S.myName, peer, 0); // always probe from gen 0
   });
-  peer.on('error', () => setTimeout(() => reconnectToNewHost(gen), 2000));
+  peer.on('error', () => setTimeout(() => reconnectToNewHost(0), 2000));
 }
 
 /* ── probe host generations to find active host ── */
@@ -965,10 +966,14 @@ function probeAndJoin(rid, name, peer, gen) {
     if (!opened) return;
     clearTimeout(timeout);
     if (S.hostConn !== conn) return; // already reconnected elsewhere
-    // Let the watchdog decide — if host is alive, pings will keep arriving
-    // and the watchdog won't fire. Only promote if pings stop for 7s.
-    setConn('Connection dropped — waiting for host…', '');
     S.hostConn = null;
+    setConn('Reconnecting…', '');
+    // DataConnection dropped but host may still be alive — reconnect with fresh peer
+    if (S.hostWatchdog) { clearTimeout(S.hostWatchdog); S.hostWatchdog = null; }
+    setTimeout(() => {
+      if (S.hostConn && S.hostConn.open) return;
+      if (!S.isHost) reconnectToNewHost(0); // fresh peer, probe from gen 0
+    }, 1500);
   });
 
   conn.on('error', () => {

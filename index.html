@@ -454,6 +454,7 @@ function onHostMsg(msg, fromId) {
 function onGuestMsg(msg) {
 
   if (msg.type === 'ping') {
+    console.log('[ping] received from host gen', msg.gen);
     // Reset watchdog — host is alive; update known generation
     if (msg.gen !== undefined) S.hostGen = msg.gen;
     if (S.hostWatchdog) clearTimeout(S.hostWatchdog);
@@ -794,8 +795,9 @@ function startHeartbeat(gen) {
 }
 
 function claimOrFail(rid, name, peer) {
+  console.log('[claimOrFail] hostConn open?', S.hostConn?.open, 'isValidRoomId:', isValidRoomId(rid));
   // Don't claim if a slow connection already opened in a parallel probe
-  if (S.hostConn && S.hostConn.open) return;
+  if (S.hostConn && S.hostConn.open) { console.log('[claimOrFail] already connected, skipping'); return; }
   if (isValidRoomId(rid)) {
     try { peer.destroy(); } catch(e){}
     setConn('Creating room…', '');
@@ -918,21 +920,25 @@ function reconnectToNewHost(gen) {
 /* ── probe host generations to find active host ── */
 function probeAndJoin(rid, name, peer, gen) {
   const targetId = hostPeerIdForGen(rid, gen);
+  console.log('[probe] trying gen', gen, 'targetId:', targetId);
   const conn = peer.connect(targetId, {reliable:true});
   let opened = false;
 
   const timeout = setTimeout(() => {
+    console.log('[probe] timeout gen', gen, 'opened:', opened);
     if (!opened && gen < 20) {
       probeAndJoin(rid, name, peer, gen + 1);
     } else if (!opened) {
+      console.log('[probe] all gens exhausted, calling claimOrFail');
       claimOrFail(rid, name, peer);
     }
   }, 5000);
 
   conn.on('open', () => {
+    console.log('[probe] conn opened gen', gen);
     opened = true; clearTimeout(timeout);
     // If a faster parallel probe already connected, discard this one
-    if (S.hostConn && S.hostConn.open && S.hostConn !== conn) { conn.close(); return; }
+    if (S.hostConn && S.hostConn.open && S.hostConn !== conn) { console.log('[probe] discarding slow duplicate conn'); conn.close(); return; }
     S.hostPeerId = targetId; S.hostConn = conn; S.hostGen = gen;
     setConn('Connected', 'ok'); $('role-lbl').textContent = 'Guest';
     conn.send({type:'hello', name});
@@ -944,6 +950,7 @@ function probeAndJoin(rid, name, peer, gen) {
     }, 3000);
     if (S.hostWatchdog) clearTimeout(S.hostWatchdog);
     S.hostWatchdog = setTimeout(() => {
+      console.log('[watchdog] fired — no ping received, promoting');
       setConn('Host disconnected — trying to become host…', 'err');
       if (S.peer) { try { S.peer.destroy(); } catch(e){} S.peer = null; }
       attemptHostPromotion();
@@ -953,6 +960,7 @@ function probeAndJoin(rid, name, peer, gen) {
   conn.on('data', msg => onGuestMsg(msg));
 
   conn.on('close', () => {
+    console.log('[probe] conn closed, opened:', opened, 'gen:', gen);
     if (!opened) return;
     clearTimeout(timeout);
     setConn('Host disconnected — trying to become host…', 'err');
